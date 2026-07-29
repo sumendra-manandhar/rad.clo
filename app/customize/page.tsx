@@ -37,15 +37,15 @@ function CustomizeContent() {
 
   const initialProduct = getProductById(searchParams?.get("product") || "");
   const [category, setCategory] = useState(
-    initialProduct?.category || "oversized-tees"
+    initialProduct?.category || "oversized-tees",
   );
   const [color, setColor] = useState(
-    searchParams?.get("color") || initialProduct?.colors[0] || "#ffffff"
+    searchParams?.get("color") || initialProduct?.colors[0] || "#ffffff",
   );
   const [size, setSize] = useState(searchParams?.get("size") || "M");
 
   const [designSource, setDesignSource] = useState<"gallery" | "upload">(
-    "gallery"
+    "gallery",
   );
   const [designCategory, setDesignCategory] = useState<string>("Typography");
   const [decalSrc, setDecalSrc] = useState<string | null>(null);
@@ -63,7 +63,7 @@ function CustomizeContent() {
       decalSrc
         ? { src: decalSrc, scale, rotation, offsetX, offsetY, side }
         : null,
-    [decalSrc, scale, rotation, offsetX, offsetY, side]
+    [decalSrc, scale, rotation, offsetX, offsetY, side],
   );
 
   const basePrice = initialProduct?.price ?? BASE_PRICE_BY_CATEGORY[category];
@@ -127,14 +127,14 @@ function CustomizeContent() {
           {initialProduct ? initialProduct.name : "Design Your Own"}
         </h1>
         <p className="text-neutral-500 mt-2 max-w-2xl">
-          Pick a garment, choose a color, then upload your own artwork or pick
-          a print from our gallery. Drag to rotate the 3D preview.
+          Pick a garment, choose a color, then upload your own artwork or pick a
+          print from our gallery. Drag to rotate the 3D preview.
         </p>
       </div>
 
       <div className="grid lg:grid-cols-[1.1fr_1fr] gap-8">
         {/* ── 3D Viewer ── */}
-        <div className="relative rounded-2xl overflow-hidden border border-neutral-200 bg-gradient-to-b from-neutral-50 to-neutral-100 h-[420px] sm:h-[520px] lg:h-auto lg:min-h-[640px]">
+        <div className="relative rounded-2xl overflow-hidden border border-neutral-200 bg-gradient-to-b from-neutral-50 to-neutral-100 h-[420px] sm:h-[520px] lg:h-auto lg:min-h-[640px] lg:max-h-[800px]">
           <Suspense fallback={null}>
             <TShirtViewer color={color} decal={decal} />
           </Suspense>
@@ -298,7 +298,11 @@ function CustomizeContent() {
                           : "border-neutral-200 hover:border-neutral-400"
                       }`}
                     >
-                      <img src={d.src} alt={d.name} className="w-full h-full object-contain" />
+                      <img
+                        src={d.src}
+                        alt={d.name}
+                        className="w-full h-full object-contain"
+                      />
                     </button>
                   ))}
                 </div>
