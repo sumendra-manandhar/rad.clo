@@ -1,0 +1,186 @@
+
+
+        <section className="py-20 bg-background">
+          <div className="container mx-auto px-4">
+            <div className="text-center mb-16">
+              <h2 className="font-display text-3xl md:text-4xl font-bold mb-4">
+                How Printo Works
+              </h2>
+              <p className="text-muted-foreground max-w-2xl mx-auto">
+                Create your custom merchandise in three simple steps.
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8">
+              <div className="text-center p-6">
+                <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full flex items-center justify-center mb-6">
+                  <ShoppingBag className="h-10 w-10 text-primary" />
+                </div>
+                <h3 className="font-bold text-xl mb-3">1. Choose a Product</h3>
+                <p className="text-muted-foreground">
+                  Select from our wide range of premium t-shirts, hoodies, mugs,
+                  caps, and more.
+                </p>
+              </div>
+              <div className="text-center p-6 relative">
+                <div className="hidden md:block absolute top-10 left-0 w-full h-0.5 bg-border -z-10"></div>
+                <div className="w-20 h-20 mx-auto bg-secondary/20 rounded-full flex items-center justify-center mb-6">
+                  <Palette className="h-10 w-10 text-secondary" />
+                </div>
+                <h3 className="font-bold text-xl mb-3">2. Add Your Design</h3>
+                <p className="text-muted-foreground">
+                  Upload your photos, logo, or use our text tool to create
+                  something unique.
+                </p>
+              </div>
+              <div className="text-center p-6">
+                <div className="w-20 h-20 mx-auto bg-accent/10 rounded-full flex items-center justify-center mb-6">
+                  <TrendingUp className="h-10 w-10 text-accent" />
+                </div>
+                <h3 className="font-bold text-xl mb-3">3. We Print & Ship</h3>
+                <p className="text-muted-foreground">
+                  We'll print your design with high-quality inks and deliver it
+                  straight to you.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section
+          className="px-4 md:px-8 mt-6"
+          aria-labelledby="category-heading"
+        >
+          <div className="max-w-7xl mx-auto">
+            <h2
+              id="category-heading"
+              className="text-2xl font-bold text-slate-900 mb-8 dark:text-slate-50"
+            >
+              Featured Categories
+            </h2>
+
+            <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+              {categories.map((category) => (
+                <li key={category.name}>
+                  <a
+                    href="#"
+                    className="group block rounded-2xl overflow-hidden relative before:absolute before:inset-0 before:w-full before:h-full before:bg-black/30 before:z-10 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    <img
+                      src={category.img}
+                      alt={category.alt}
+                      className="w-full aspect-square object-cover object-top"
+                    />
+
+                    <div className="space-y-3 absolute bottom-0 z-20 px-4 py-3">
+                      <h3 className="text-sm font-semibold text-white">
+                        {category.discount}
+                      </h3>
+
+                      <span className="inline-flex items-center gap-1 bg-pink-600 text-sm font-medium text-white px-3.5 py-2 rounded-full group-hover:opacity-90 transition-opacity">
+                        Shop now →
+                      </span>
+                    </div>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-lg text-center">
+            <h2 className="text-3xl/tight font-bold text-gray-900 sm:text-4xl dark:text-white">
+              Features for growth
+            </h2>
+
+            <p className="mt-4 text-lg text-pretty text-gray-700 dark:text-gray-200">
+              Lorem ipsum dolor sit, amet consectetur adipisicing elit.
+              Veritatis tenetur, nemo quam voluptas sunt impedit dolorem
+              asperiores aliquid doloribus fugit.
+            </p>
+          </div>
+
+          <div className="mt-8 grid grid-cols-1 gap-8 md:grid-cols-3">
+            <div className="rounded-lg border border-gray-200 p-6 dark:border-gray-700">
+              <div className="inline-flex rounded-lg bg-gray-100 p-3 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                {/* <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+                stroke="currentColor"
+                className="size-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z"
+                ></path>
+              </svg> */}
+              </div>
+
+              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
+                High performance
+              </h3>
+
+              <p className="mt-2 text-pretty text-gray-700 dark:text-gray-200">
+                Lightning-quick load times optimized for every device
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-6 dark:border-gray-700">
+              <div className="inline-flex rounded-lg bg-gray-100 p-3 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                {/* <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+                stroke="currentColor"
+                className="size-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z"
+                ></path>
+              </svg> */}
+              </div>
+
+              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
+                Enterprise security
+              </h3>
+
+              <p className="mt-2 text-pretty text-gray-700 dark:text-gray-200">
+                Enterprise-grade security built into every layer
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 p-6 dark:border-gray-700">
+              <div className="inline-flex rounded-lg bg-gray-100 p-3 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                {/* <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.5"
+                stroke="currentColor"
+                className="size-6"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 13.5V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m12-3V3.75m0 9.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 3.75V16.5m-6-9V3.75m0 3.75a1.5 1.5 0 0 1 0 3m0-3a1.5 1.5 0 0 0 0 3m0 9.75V10.5"
+                ></path>
+              </svg> */}
+              </div>
+
+              <h3 className="mt-4 text-lg font-semibold text-gray-900 dark:text-white">
+                Highly configurable
+              </h3>
+
+              <p className="mt-2 text-pretty text-gray-700 dark:text-gray-200">
+                Adapt every aspect to match your brand and needs
+              </p>
+            </div>
+          </div>
+        </div>
