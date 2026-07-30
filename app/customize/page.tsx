@@ -10,6 +10,7 @@ import {
   Trash2,
   ShoppingBag,
   Check,
+  RotateCcw,
 } from "lucide-react";
 import { CATEGORIES, getProductById } from "@/lib/products";
 import { DESIGN_CATEGORIES, getDesignsByCategory } from "@/lib/designs";
@@ -37,15 +38,15 @@ function CustomizeContent() {
 
   const initialProduct = getProductById(searchParams?.get("product") || "");
   const [category, setCategory] = useState(
-    initialProduct?.category || "oversized-tees",
+    initialProduct?.category || "oversized-tees"
   );
   const [color, setColor] = useState(
-    searchParams?.get("color") || initialProduct?.colors[0] || "#ffffff",
+    searchParams?.get("color") || initialProduct?.colors[0] || "#ffffff"
   );
   const [size, setSize] = useState(searchParams?.get("size") || "M");
 
   const [designSource, setDesignSource] = useState<"gallery" | "upload">(
-    "gallery",
+    "gallery"
   );
   const [designCategory, setDesignCategory] = useState<string>("Typography");
   const [decalSrc, setDecalSrc] = useState<string | null>(null);
@@ -63,11 +64,18 @@ function CustomizeContent() {
       decalSrc
         ? { src: decalSrc, scale, rotation, offsetX, offsetY, side }
         : null,
-    [decalSrc, scale, rotation, offsetX, offsetY, side],
+    [decalSrc, scale, rotation, offsetX, offsetY, side]
   );
 
-  const basePrice = initialProduct?.price ?? BASE_PRICE_BY_CATEGORY[category];
+  const basePrice = initialProduct?.price ?? BASE_PRICE_BY_CATEGORY[category] ?? 799;
   const finalPrice = basePrice + (decal ? CUSTOM_PRINT_FEE : 0);
+
+  const resetTransforms = () => {
+    setScale(1);
+    setRotation(0);
+    setOffsetX(0);
+    setOffsetY(0);
+  };
 
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -77,6 +85,7 @@ function CustomizeContent() {
       setDecalSrc(reader.result as string);
       setDecalName(file.name);
       setDesignSource("upload");
+      resetTransforms();
     };
     reader.readAsDataURL(file);
   };
@@ -84,11 +93,13 @@ function CustomizeContent() {
   const selectGalleryDesign = (src: string, name: string) => {
     setDecalSrc(src);
     setDecalName(name);
+    resetTransforms();
   };
 
   const removeDesign = () => {
     setDecalSrc(null);
     setDecalName("");
+    resetTransforms();
   };
 
   const handleAddToCart = () => {
@@ -113,7 +124,7 @@ function CustomizeContent() {
   };
 
   useEffect(() => {
-    if (initialProduct) setColor(initialProduct.colors[0]);
+    if (initialProduct?.colors?.[0]) setColor(initialProduct.colors[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -132,19 +143,19 @@ function CustomizeContent() {
         </p>
       </div>
 
-      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-8">
+      <div className="grid lg:grid-cols-[1.1fr_1fr] gap-8 items-start">
         {/* ── 3D Viewer ── */}
-        <div className="relative rounded-2xl overflow-hidden border border-neutral-200 bg-gradient-to-b from-neutral-50 to-neutral-100 h-[420px] sm:h-[520px] lg:h-auto lg:min-h-[640px] lg:max-h-[800px]">
+        <div className="sticky top-6 relative rounded-2xl overflow-hidden border border-neutral-200 bg-gradient-to-b from-neutral-50 to-neutral-100 h-[420px] sm:h-[520px] lg:h-[640px]">
           <Suspense fallback={null}>
             <TShirtViewer color={color} decal={decal} />
           </Suspense>
-          <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-sm text-[11px] font-medium text-neutral-600 px-3 py-1.5 rounded-full">
+          <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-sm text-[11px] font-medium text-neutral-600 px-3 py-1.5 rounded-full shadow-sm">
             Drag to rotate · Scroll to zoom
           </div>
           {decal && (
             <button
               onClick={() => setSide(side === "front" ? "back" : "front")}
-              className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm text-xs font-semibold text-neutral-800 px-3 py-1.5 rounded-full shadow-sm hover:bg-white"
+              className="absolute top-4 right-4 bg-white/90 backdrop-blur-sm text-xs font-semibold text-neutral-800 px-3 py-1.5 rounded-full shadow-sm hover:bg-white transition-colors"
             >
               Viewing: {side === "front" ? "Front" : "Back"} (tap to flip)
             </button>
@@ -312,7 +323,7 @@ function CustomizeContent() {
             {designSource === "upload" && (
               <div
                 onClick={() => fileInputRef.current?.click()}
-                className="border-2 border-dashed border-neutral-300 rounded-xl p-6 text-center cursor-pointer hover:border-neutral-500 transition-colors"
+                className="border-2 border-dashed border-neutral-300 rounded-xl p-6 text-center cursor-pointer hover:border-neutral-500 transition-colors bg-white"
               >
                 {decalSrc && designSource === "upload" ? (
                   <div className="flex flex-col items-center gap-2">
@@ -321,17 +332,17 @@ function CustomizeContent() {
                       alt="Uploaded design"
                       className="w-20 h-20 object-contain"
                     />
-                    <p className="text-xs text-neutral-500 truncate max-w-full">
+                    <p className="text-xs text-neutral-500 truncate max-w-full font-medium">
                       {decalName}
                     </p>
-                    <span className="text-xs font-semibold underline">
+                    <span className="text-xs font-semibold underline text-neutral-800">
                       Replace file
                     </span>
                   </div>
                 ) : (
                   <>
                     <Upload className="w-6 h-6 mx-auto text-neutral-400 mb-2" />
-                    <p className="text-sm text-neutral-600">
+                    <p className="text-sm font-medium text-neutral-700">
                       Click to upload PNG, JPG or SVG
                     </p>
                     <p className="text-xs text-neutral-400 mt-1">
@@ -345,17 +356,26 @@ function CustomizeContent() {
 
           {/* Placement controls */}
           {decal && (
-            <div className="space-y-4 border border-neutral-200 rounded-xl p-4 bg-neutral-50">
+            <div className="space-y-4 border border-neutral-200 rounded-xl p-4 bg-neutral-50/50">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-neutral-900 flex items-center gap-1.5">
                   <Move className="w-4 h-4" /> Placement
                 </h3>
-                <button
-                  onClick={removeDesign}
-                  className="text-xs text-red-600 font-medium flex items-center gap-1 hover:underline"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Remove
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={resetTransforms}
+                    className="text-xs text-neutral-500 hover:text-neutral-900 font-medium flex items-center gap-1 transition-colors"
+                    title="Reset position"
+                  >
+                    <RotateCcw className="w-3 h-3" /> Reset
+                  </button>
+                  <button
+                    onClick={removeDesign}
+                    className="text-xs text-red-600 font-medium flex items-center gap-1 hover:underline"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Remove
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-2">
@@ -366,7 +386,7 @@ function CustomizeContent() {
                     className={`flex-1 py-1.5 rounded-full text-xs font-medium capitalize transition-colors ${
                       side === s
                         ? "bg-neutral-900 text-white"
-                        : "bg-white border border-neutral-300 text-neutral-700"
+                        : "bg-white border border-neutral-300 text-neutral-700 hover:bg-neutral-50"
                     }`}
                   >
                     {s}
@@ -374,8 +394,8 @@ function CustomizeContent() {
                 ))}
               </div>
 
-              <label className="block text-xs text-neutral-500">
-                Size
+              <label className="block text-xs text-neutral-600 space-y-1">
+                <span className="font-medium">Size</span>
                 <input
                   type="range"
                   min={0.4}
@@ -386,8 +406,9 @@ function CustomizeContent() {
                   className="w-full accent-neutral-900"
                 />
               </label>
-              <label className="block text-xs text-neutral-500">
-                Move Left / Right
+
+              <label className="block text-xs text-neutral-600 space-y-1">
+                <span className="font-medium">Move Left / Right</span>
                 <input
                   type="range"
                   min={-1}
@@ -398,8 +419,9 @@ function CustomizeContent() {
                   className="w-full accent-neutral-900"
                 />
               </label>
-              <label className="block text-xs text-neutral-500">
-                Move Up / Down
+
+              <label className="block text-xs text-neutral-600 space-y-1">
+                <span className="font-medium">Move Up / Down</span>
                 <input
                   type="range"
                   min={-1}
@@ -410,8 +432,11 @@ function CustomizeContent() {
                   className="w-full accent-neutral-900"
                 />
               </label>
-              <label className="block text-xs text-neutral-500 flex items-center gap-1.5">
-                <RotateCw className="w-3.5 h-3.5" /> Rotation
+
+              <label className="block text-xs text-neutral-600 space-y-1">
+                <span className="font-medium flex items-center gap-1.5">
+                  <RotateCw className="w-3.5 h-3.5" /> Rotation
+                </span>
                 <input
                   type="range"
                   min={-Math.PI}
@@ -445,7 +470,7 @@ function CustomizeContent() {
             </div>
             <button
               onClick={handleAddToCart}
-              className="w-full flex items-center justify-center gap-2 bg-neutral-900 text-white text-sm font-semibold py-3.5 rounded-full hover:bg-neutral-700 transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-neutral-900 text-white text-sm font-semibold py-3.5 rounded-full hover:bg-neutral-800 transition-colors"
             >
               {addedFlash ? (
                 <>
@@ -466,7 +491,7 @@ function CustomizeContent() {
 
 export default function CustomizePage() {
   return (
-    <Suspense fallback={<div className="py-20 text-center">Loading…</div>}>
+    <Suspense fallback={<div className="py-20 text-center text-sm text-neutral-500">Loading editor…</div>}>
       <CustomizeContent />
     </Suspense>
   );
