@@ -257,7 +257,7 @@ export default function TShirtViewer({
         ref={controlsRef}
         enablePan={false}
         enableZoom={true}
-        minDistance={2.8}
+        minDistance={2.2}
         maxDistance={4.0}
         autoRotate={isAutoRotating && autoRotate}
         onStart={handleControlsStart}
