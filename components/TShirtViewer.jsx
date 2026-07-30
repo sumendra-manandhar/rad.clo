@@ -12,8 +12,33 @@ import {
 } from "@react-three/drei";
 import * as THREE from "three";
 
-// ── Decal projected onto the shirt ────────────────────────────────────────────
-function ShirtDecal({ targetMesh, decal }) {
+// Small safety net: if projecting a decal onto a particular shirt panel
+// fails for any reason, swallow it and just skip that panel instead of
+// breaking the rest of the viewer.
+class DecalBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(err) {
+    console.warn("[TShirtViewer] skipped a decal panel:", err);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
+
+// ── Decal projected onto one shirt panel ──────────────────────────────────────
+// Rather than guessing a single "main" mesh (which can miss the correct
+// panel entirely), we try the decal against every real panel of the shirt.
+// Panels the anchor point doesn't actually land near just come out as empty
+// geometry (harmless, invisible) — whichever panel it does land on shows
+// the design, wrapped correctly to that panel's curved surface.
+function ShirtDecal({ mesh, anchor, decal }) {
   const texture = useTexture(decal.src);
 
   useEffect(() => {
@@ -22,38 +47,25 @@ function ShirtDecal({ targetMesh, decal }) {
     texture.needsUpdate = true;
   }, [texture]);
 
-  const { position, rotation, scale } = useMemo(() => {
-    targetMesh.geometry.computeBoundingBox();
-    const bbox = targetMesh.geometry.boundingBox.clone();
-    const size = new THREE.Vector3();
-    bbox.getSize(size);
-    const center = new THREE.Vector3();
-    bbox.getCenter(center);
-
-    const isBack = decal.side === "back";
-    const zPos = isBack
-      ? bbox.min.z + size.z * 0.02
-      : bbox.max.z - size.z * 0.02;
-
-    const baseSize = Math.min(size.x, size.y) * 0.55 * (decal.scale || 1);
-    const depth = Math.max(size.x, size.y, size.z) * 0.4;
-
-    return {
-      position: [
-        center.x + (decal.offsetX || 0) * size.x * 0.5,
-        center.y + size.y * 0.14 + (decal.offsetY || 0) * size.y * 0.5,
-        zPos,
-      ],
-      rotation: [0, isBack ? Math.PI : 0, decal.rotation || 0],
-      scale: [baseSize, baseSize, depth || 0.5],
-    };
-  }, [targetMesh, decal]);
+  const scale = useMemo(() => {
+    const baseSize = Math.max(anchor.printWidth * (decal.scale || 1), 0.05);
+    return [baseSize, baseSize, anchor.depth];
+  }, [anchor, decal]);
 
   return (
     <Decal
-      mesh={{ current: targetMesh }}
-      position={position}
-      rotation={rotation}
+      mesh={{ current: mesh }}
+      position={anchor.position}
+      // IMPORTANT: this must be a NUMBER, not an array like [0, isBack ? Math.PI : 0, ...].
+      // A number tells drei's Decal to auto-orient itself to the nearest
+      // surface normal, which is what makes it wrap a curved surface
+      // correctly instead of stamping on at a fixed flat angle. An array
+      // skips that auto-orientation step entirely — that was the main
+      // cause of the design not sitting properly on the shirt.
+      // Math.PI is added as a base correction for this model's surface
+      // normals (otherwise the artwork renders upside down); the design's
+      // own rotation slider is layered on top of that.
+      rotation={Math.PI + (decal.rotation || 0)}
       scale={scale}
     >
       <meshStandardMaterial
@@ -75,14 +87,15 @@ function TShirtModel({ color, decal, autoRotate = true }) {
 
   // Clone so color changes don't mutate the cached asset
   const cloned = React.useMemo(() => scene.clone(true), [scene]);
-  const [targetMesh, setTargetMesh] = useState(null);
+  const [meshList, setMeshList] = useState([]);
+  const [modelBox, setModelBox] = useState(null);
 
-  // Apply color to every mesh in the model, and find the largest mesh to
-  // use as the decal projection target (the main body panel of the shirt).
+  // Apply color to every mesh in the model (unchanged) — and, separately,
+  // collect the mesh list + overall bounding box used for decal placement.
   useEffect(() => {
     const hexColor = new THREE.Color(color);
-    let best = null;
-    let bestVolume = 0;
+    const list = [];
+    const box = new THREE.Box3();
 
     cloned.traverse((obj) => {
       if (obj.isMesh) {
@@ -96,20 +109,16 @@ function TShirtModel({ color, decal, autoRotate = true }) {
         obj.receiveShadow = true;
 
         if (obj.geometry) {
+          if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
           obj.geometry.computeBoundingBox();
-          const bb = obj.geometry.boundingBox;
-          const size = new THREE.Vector3();
-          bb.getSize(size);
-          const volume = size.x * size.y * size.z;
-          if (volume > bestVolume) {
-            bestVolume = volume;
-            best = obj;
-          }
+          box.union(obj.geometry.boundingBox);
+          list.push(obj);
         }
       }
     });
 
-    setTargetMesh(best);
+    setMeshList(list);
+    setModelBox(box);
   }, [color, cloned]);
 
   // Gentle auto-rotation (paused when user is dragging via OrbitControls)
@@ -131,6 +140,32 @@ function TShirtModel({ color, decal, autoRotate = true }) {
     return { scale: s, center: c };
   }, [cloned]);
 
+  // A single canonical chest/back anchor point (in model-local space) that
+  // every panel attempt aims at — keeps placement consistent no matter
+  // which panel ends up actually catching it.
+  const anchor = useMemo(() => {
+    if (!modelBox || modelBox.isEmpty() || !decal) return null;
+    const size = new THREE.Vector3();
+    modelBox.getSize(size);
+    const c = new THREE.Vector3();
+    modelBox.getCenter(c);
+    const isBack = decal.side === "back";
+    const zPos = isBack
+      ? modelBox.min.z + size.z * 0.12
+      : modelBox.max.z - size.z * 0.12;
+    return {
+      position: [
+        c.x + (decal.offsetX || 0) * size.x * 0.5,
+        c.y + size.y * 0.12 + (decal.offsetY || 0) * size.y * 0.5,
+        zPos,
+      ],
+      printWidth: Math.min(size.x, size.y) * 0.55,
+      // Generous depth so the projection box always fully pierces the
+      // fabric, regardless of small inaccuracies in the anchor point above.
+      depth: Math.max(size.x, size.y, size.z, 0.3) * 0.8,
+    };
+  }, [modelBox, decal]);
+
   return (
     <group ref={group}>
       <primitive
@@ -138,12 +173,17 @@ function TShirtModel({ color, decal, autoRotate = true }) {
         scale={scale}
         // position computed from the model center so the model stays fixed
         position={[-center.x * scale, -center.y * scale, -center.z * scale]}
-      />
-      {decal && targetMesh && (
-        <Suspense fallback={null}>
-          <ShirtDecal targetMesh={targetMesh} decal={decal} />
-        </Suspense>
-      )}
+      >
+        {decal &&
+          anchor &&
+          meshList.map((m, i) => (
+            <DecalBoundary key={m.uuid || i}>
+              <Suspense fallback={null}>
+                <ShirtDecal mesh={m} anchor={anchor} decal={decal} />
+              </Suspense>
+            </DecalBoundary>
+          ))}
+      </primitive>
     </group>
   );
 }
