@@ -20,6 +20,14 @@ export type CartItem = {
   image: string;
   custom?: boolean; // true if it's a customized product
   designName?: string;
+  // The actual artwork used (data URL for an upload, or a gallery/Supabase
+  // URL) — this is what lets the admin panel show/download the real print
+  // file for a custom order, not just its name.
+  designSrc?: string;
+  designSide?: "front" | "back";
+  designOffsetX?: number;
+  designOffsetY?: number;
+  designRotation?: number;
 };
 
 type CartContextType = {
