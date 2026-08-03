@@ -19,6 +19,8 @@ export default function Navbar() {
   const { totalCount, openCart } = useCart();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  if (pathname?.startsWith("/admin")) return null;
+
   return (
     <>
       <header className="sticky top-0 z-40 w-full border-b border-neutral-200 bg-white/90 backdrop-blur-md font-poppins">

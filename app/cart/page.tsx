@@ -2,19 +2,36 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Minus, Plus, Trash2, CheckCircle2 } from "lucide-react";
+import { Minus, Plus, Trash2, CheckCircle2, Loader2 } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
+import { createOrder } from "@/lib/orders";
+import { isSupabaseConfigured } from "@/lib/supabase";
 
 export default function CartPage() {
   const { items, removeItem, updateQty, totalPrice, clearCart } = useCart();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [placed, setPlaced] = useState(false);
+  const [placing, setPlacing] = useState(false);
+  const [orderId, setOrderId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", address: "" });
 
-  const handlePlaceOrder = (e: React.FormEvent) => {
+  const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    // No payment/backend is wired up yet. This simulates order placement —
-    // wire this up to your payment provider + order API when ready.
+    setPlacing(true);
+    // Saves the order (and uploads any custom design files) to Supabase so
+    // it shows up in /admin/orders. If Supabase isn't configured yet,
+    // createOrder() resolves to null and we still confirm the order to the
+    // customer — see SETUP.md to connect a backend so orders are actually
+    // captured somewhere.
+    const result = await createOrder({
+      customerName: form.name,
+      phone: form.phone,
+      address: form.address,
+      items,
+      totalPrice,
+    });
+    setOrderId(result?.id || null);
+    setPlacing(false);
     setPlaced(true);
     clearCart();
   };
@@ -26,10 +43,16 @@ export default function CartPage() {
         <h1 className="text-2xl font-semibold text-neutral-900 mb-2">
           Order received!
         </h1>
-        <p className="text-neutral-500 mb-8">
+        <p className="text-neutral-500 mb-2">
           Thanks {form.name || "there"} — we'll reach out shortly to confirm
           details and payment before printing begins.
         </p>
+        {orderId && (
+          <p className="text-xs text-neutral-400 mb-8">
+            Order reference: {orderId.slice(0, 8).toUpperCase()}
+          </p>
+        )}
+        {!orderId && <div className="mb-8" />}
         <Link
           href="/shop"
           className="inline-block bg-neutral-900 text-white text-sm font-semibold px-6 py-3 rounded-full hover:bg-neutral-700"
@@ -158,13 +181,26 @@ export default function CartPage() {
                   />
                   <button
                     type="submit"
-                    className="w-full bg-neutral-900 text-white text-sm font-semibold py-3.5 rounded-full hover:bg-neutral-700 transition-colors"
+                    disabled={placing}
+                    className="w-full bg-neutral-900 text-white text-sm font-semibold py-3.5 rounded-full hover:bg-neutral-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
                   >
-                    Place Order
+                    {placing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" /> Placing Order…
+                      </>
+                    ) : (
+                      "Place Order"
+                    )}
                   </button>
                   <p className="text-[11px] text-neutral-400 text-center">
                     Payment is collected on confirmation — no card details needed yet.
                   </p>
+                  {!isSupabaseConfigured && (
+                    <p className="text-[11px] text-amber-600 text-center">
+                      Note: backend isn't connected yet, so this order won't
+                      be saved to Admin. See SETUP.md.
+                    </p>
+                  )}
                 </form>
               )}
             </div>

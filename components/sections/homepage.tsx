@@ -2,6 +2,30 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { Palette, Upload, Eye, Truck } from "lucide-react";
+
+const STEPS = [
+  {
+    icon: Palette,
+    title: "1. Pick a garment",
+    desc: "Oversized tees, classic tees, polos, hoodies or sweatshirts — in the colour and size you want.",
+  },
+  {
+    icon: Upload,
+    title: "2. Add your design",
+    desc: "Upload your own artwork or pick a print from our gallery — front, back, or both.",
+  },
+  {
+    icon: Eye,
+    title: "3. Preview it live",
+    desc: "See exactly how it'll look in 3D before you order — no surprises when it arrives.",
+  },
+  {
+    icon: Truck,
+    title: "4. We print & ship",
+    desc: "High-quality DTF printing, made to order and shipped straight to your door.",
+  },
+];
 
 export default function Homepage() {
   const [stopScroll, setStopScroll] = useState(false);
@@ -29,94 +53,79 @@ export default function Homepage() {
   ];
 
   return (
-    <>
-      <div className="w-screen min-h-screen flex justify-center items-center">
-        <section className="relative w-full h-screen overflow-hidden bg-background flex flex-col items-center justify-center text-center px-4">
-          {/* Badge */}
-          <div className="mb-4 inline-block rounded-full border border-border bg-card/50 px-4 py-1.5 text-sm font-medium text-muted-foreground backdrop-blur-sm">
-            Join over 100,000 happy creators
-          </div>
-
-          {/* Heading */}
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tighter text-foreground">
-            Engage Audiences
-            <br />
-            with Stunning Videos
-          </h1>
-
-          {/* Description */}
-          <p className="mt-6 max-w-xl text-lg text-muted-foreground">
-            Boost Your Brand with High-Impact Short Videos from our expert
-            content creators. Our team is ready to propel your business forward.
+    <section className="w-full bg-white py-16 lg:py-24 px-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="text-center mb-14">
+          <p className="text-sm font-medium uppercase tracking-wider text-neutral-500">
+            How It Works
           </p>
+          <h2 className="text-2xl md:text-4xl font-semibold text-neutral-900 mt-2">
+            From blank tee to your design, in minutes
+          </h2>
+        </div>
 
-          {/* CTA */}
-          <button className="mt-8 px-8 py-3 rounded-full bg-red-500 text-white font-semibold shadow-lg transition-colors hover:bg-red-600">
-            Get Started
-          </button>
-
-          <div
-            className="overflow-hidden w-full relative max-w-6xl mx-auto mt-16"
-            onMouseEnter={() => setStopScroll(true)}
-            onMouseLeave={() => setStopScroll(false)}
-          >
-            <div className="absolute left-0 top-0 h-full w-20 z-10 pointer-events-none bg-gradient-to-r from-white to-transparent" />
-            <div
-              className="marquee-inner flex w-fit"
-              style={{
-                animationPlayState: stopScroll ? "paused" : "running",
-                animationDuration: cardData.length * 2500 + "ms",
-              }}
-            >
-              <div className="flex">
-                {[...cardData, ...cardData].map((card, index) => (
-                  <div
-                    key={index}
-                    className="w-56 mx-4 h-[20rem] relative group hover:scale-90 transition-all duration-300"
-                  >
-                    <img
-                      src={card.image}
-                      alt="card"
-                      className="w-full h-full object-cover"
-                    />
-                    <div className="flex items-center justify-center px-4 opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-0 backdrop-blur-md left-0 w-full h-full bg-black/20">
-                      <p className="text-white text-lg font-semibold text-center">
-                        {card.title}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-16">
+          {STEPS.map((step) => {
+            const Icon = step.icon;
+            return (
+              <div key={step.title} className="text-center">
+                <div className="w-14 h-14 rounded-full bg-neutral-900 text-white flex items-center justify-center mx-auto mb-4">
+                  <Icon className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-semibold text-neutral-900 mb-1.5">
+                  {step.title}
+                </h3>
+                <p className="text-xs text-neutral-500 leading-relaxed">{step.desc}</p>
               </div>
-            </div>
-            <div className="absolute right-0 top-0 h-full w-20 md:w-40 z-10 pointer-events-none bg-gradient-to-l from-white to-transparent" />
-          </div>
+            );
+          })}
+        </div>
 
-          {/* Image Strip */}
-          {/* <div className="absolute bottom-0 left-0 w-full h-1/3 md:h-2/5 overflow-hidden">
-            <div className="flex gap-4 animate-marquee px-4">
-              {[
-                "https://images.unsplash.com/photo-1756312148347-611b60723c7a?w=900&auto=format&fit=crop&q=60",
-                "https://images.unsplash.com/photo-1757865579201-693dd2080c73?w=900&auto=format&fit=crop&q=60",
-                "https://images.unsplash.com/photo-1756786605218-28f7dd95a493?w=900&auto=format&fit=crop&q=60",
-                "https://images.unsplash.com/photo-1757519740947-eef07a74c4ab?w=900&auto=format&fit=crop&q=60",
-              ].map((src, i) => (
+        <div className="text-center mb-8">
+          <Link
+            href="/customize"
+            className="inline-block bg-neutral-900 text-white text-sm font-semibold px-7 py-3.5 rounded-full hover:bg-neutral-700 transition-colors"
+          >
+            Start Designing →
+          </Link>
+        </div>
+
+        <div
+          className="overflow-hidden w-full relative max-w-6xl mx-auto mt-12 rounded-2xl"
+          onMouseEnter={() => setStopScroll(true)}
+          onMouseLeave={() => setStopScroll(false)}
+        >
+          <div className="absolute left-0 top-0 h-full w-16 md:w-24 z-10 pointer-events-none bg-gradient-to-r from-white to-transparent" />
+          <div
+            className="marquee-inner flex w-fit"
+            style={{
+              animationPlayState: stopScroll ? "paused" : "running",
+              animationDuration: cardData.length * 2500 + "ms",
+            }}
+          >
+            <div className="flex">
+              {[...cardData, ...cardData].map((card, index) => (
                 <div
-                  key={i}
-                  className={`relative aspect-[3/4] h-48 md:h-64 flex-shrink-0 ${
-                    i % 2 === 0 ? "-rotate-2" : "rotate-3"
-                  }`}
+                  key={index}
+                  className="w-56 mx-3 h-64 relative group hover:scale-95 transition-all duration-300 rounded-xl overflow-hidden"
                 >
                   <img
-                    src={src}
-                    alt={`Showcase ${i + 1}`}
-                    className="w-full h-full object-cover rounded-2xl shadow-md"
+                    src={card.image}
+                    alt="card"
+                    className="w-full h-full object-cover"
                   />
+                  <div className="flex items-center justify-center px-4 opacity-0 group-hover:opacity-100 transition-all duration-300 absolute bottom-0 backdrop-blur-md left-0 w-full h-full bg-black/30">
+                    <p className="text-white text-base font-semibold text-center">
+                      {card.title}
+                    </p>
+                  </div>
                 </div>
               ))}
             </div>
-          </div> */}
-        </section>
+          </div>
+          <div className="absolute right-0 top-0 h-full w-16 md:w-24 z-10 pointer-events-none bg-gradient-to-l from-white to-transparent" />
+        </div>
       </div>
-    </>
+    </section>
   );
 }

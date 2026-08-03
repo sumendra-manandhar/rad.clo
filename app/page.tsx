@@ -4,11 +4,11 @@ import { PointerHighlight } from "@/components/ui/pointer-highlight";
 import Hero from "@/components/sections/hero";
 
 import Homepage from "@/components/sections/homepage";
-import MessageSection from "@/components/sections/messageSection";
 
 import Link from "next/link";
 import { useState } from "react";
 import { PRODUCTS } from "@/lib/products";
+import { DESIGNS } from "@/lib/designs";
 
 const CATEGORY_SHOWCASE = [
   {
@@ -105,59 +105,50 @@ export default function Home() {
 
       {/* -------------- */}
 
-      <h1 className="text-3xl font-semibold text-center mx-auto">
-        Our Latest Creations
-      </h1>
-      <p className="text-sm text-slate-500 text-center mt-2 max-w-lg mx-auto">
-        A visual collection of our most recent works - each piece crafted with
-        intention, emotion, and style.
-      </p>
-
-      <div className="flex items-center gap-6 h-[400px] w-full max-w-5xl mt-10 mx-auto">
-        <div className="relative group flex-grow transition-all w-56 h-[400px] duration-500 hover:w-full">
-          <img
-            className="h-full w-full object-cover object-center"
-            src="https://images.unsplash.com/photo-1543269865-0a740d43b90c?q=80&w=800&h=400&auto=format&fit=crop"
-            alt="image"
-          />
-          <div className="absolute inset-0 flex flex-col justify-end p-10 text-white bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300">
-            <h1 className="text-3xl">Prompt engineers</h1>
-            <p className="text-sm">
-              Bridging the gap between human intent and machine understanding
-              through expert prompt design.
+      <div className="bg-neutral-50 py-16 lg:py-20">
+        <div className="max-w-7xl mx-auto px-4">
+          <div className="text-center mb-10">
+            <p className="text-sm font-medium uppercase tracking-wider text-neutral-500">
+              Popular Designs
+            </p>
+            <h2 className="text-2xl md:text-4xl font-semibold text-neutral-900 mt-2">
+              Don't want to start from a blank shirt?
+            </h2>
+            <p className="text-neutral-500 mt-2 max-w-xl mx-auto">
+              Pick a print from our gallery and put it straight on a garment
+              — colour and size are up to you.
             </p>
           </div>
-        </div>
-        <div className="relative group flex-grow transition-all w-56 h-[400px] duration-500 hover:w-full">
-          <img
-            className="h-full w-full object-cover object-right"
-            src="https://images.unsplash.com/photo-1714976326351-0ecf0244f0fc?q=80&w=800&h=400&auto=format&fit=crop"
-            alt="image"
-          />
-          <div className="absolute inset-0 flex flex-col justify-end p-10 text-white bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300">
-            <h1 className="text-3xl">Data scientists</h1>
-            <p className="text-sm">
-              Bridging the gap between human intent and machine understanding
-              through expert prompt design.
-            </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+            {DESIGNS.slice(0, 6).map((d) => (
+              <Link
+                key={d.id}
+                href={`/customize?designSrc=${encodeURIComponent(d.src)}&designName=${encodeURIComponent(d.name)}`}
+                className="group"
+              >
+                <div className="relative overflow-hidden rounded-xl bg-white aspect-square border border-neutral-200 group-hover:border-neutral-400 transition-colors">
+                  <img
+                    src={d.src}
+                    alt={d.name}
+                    className="w-full h-full object-contain p-3 transition-transform duration-300 group-hover:scale-105"
+                  />
+                </div>
+                <p className="mt-2 text-xs font-medium text-neutral-700 text-center truncate">
+                  {d.name}
+                </p>
+              </Link>
+            ))}
           </div>
-        </div>
-        <div className="relative group flex-grow transition-all w-56 h-[400px] duration-500 hover:w-full">
-          <img
-            className="h-full w-full object-cover object-center"
-            src="https://images.unsplash.com/photo-1736220690062-79e12ca75262?q=80&w=800&h=400&auto=format&fit=crop"
-            alt="image"
-          />
-          <div className="absolute inset-0 flex flex-col justify-end p-10 text-white bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300">
-            <h1 className="text-3xl">Software engineers</h1>
-            <p className="text-sm">
-              Bridging the gap between human intent and machine understanding
-              through expert prompt design.
-            </p>
+          <div className="text-center mt-8">
+            <Link
+              href="/shop?view=designs"
+              className="text-sm font-semibold underline text-neutral-900"
+            >
+              Browse all designs →
+            </Link>
           </div>
         </div>
       </div>
-      {/* --------- */}
 
       <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap');
@@ -216,40 +207,75 @@ export default function Home() {
         </Link>
       </div>
 
+      <ShopByDesignBanner />
       <Sectiontestimonial />
-      <MessageSection />
 
       <FAQ />
     </>
   );
 }
+const ShopByDesignBanner = () => {
+  return (
+    <div className="bg-neutral-900 py-14 px-4">
+      <div className="max-w-5xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-center md:text-left">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-neutral-400">
+            New
+          </p>
+          <h2 className="text-2xl md:text-3xl font-semibold text-white mt-1">
+            Have your own artwork? Or want ours?
+          </h2>
+          <p className="text-neutral-400 mt-2 max-w-md">
+            Upload your own design, or shop our whole print gallery and see
+            it on a shirt instantly.
+          </p>
+        </div>
+        <div className="flex gap-3 shrink-0">
+          <Link
+            href="/shop?view=designs"
+            className="bg-white text-neutral-900 text-sm font-semibold px-6 py-3 rounded-full hover:bg-neutral-200 transition-colors"
+          >
+            Browse Designs
+          </Link>
+          <Link
+            href="/customize"
+            className="border border-white/30 text-white text-sm font-semibold px-6 py-3 rounded-full hover:bg-white/10 transition-colors"
+          >
+            Upload Your Own
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Sectiontestimonial = () => {
   const testimonials = [
     {
-      text: "Rad.Clo allowed our team to move quickly and confidently - clean design, solid structure, and ready for production.",
-      name: "Cristofer Levin",
-      role: "Frontend engineer",
+      text: "Ordered matching hoodies for my whole team — the 3D preview looked exactly like what showed up. Print quality is genuinely great.",
+      name: "Priya Sharma",
+      role: "Ordered a custom hoodie",
       image:
         "https://images.unsplash.com/photo-1633332755192-727a05c4013d?q=80&w=200",
     },
     {
-      text: "Using Rad.Clo saved us time while keeping the design sharp and consistent. These components are built for real products.",
-      name: "Jason Kim",
-      role: "Product designer",
+      text: "I uploaded my own artwork and could actually see it on the shirt before paying. No more guessing how a print will turn out.",
+      name: "Aarav Thapa",
+      role: "Ordered a custom tee",
       image:
         "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200",
     },
     {
-      text: "Rad.Clo struck the perfect balance between speed and quality. Every components are well crafted and production-ready.",
-      name: "Michael Chen",
-      role: "Backend engineer",
+      text: "Got 30 tees printed for a college fest. Bulk order was easy to sort out and everything arrived on time.",
+      name: "Sneha Gurung",
+      role: "Bulk order, college fest",
       image:
         "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200&auto=format&fit=crop&q=60",
     },
     {
-      text: "We shipped faster with Rad.Clo, and the design quality never took a hit. The components feel reliable and polished.",
-      name: "Sofia Martinez",
-      role: "UI/UX designer",
+      text: "The oversized tee fits exactly like the size guide said it would, and the print hasn't faded after multiple washes.",
+      name: "Rohan Karki",
+      role: "Ordered an oversized tee",
       image:
         "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?q=80&w=100&h=100&auto=format&fit=crop",
     },
@@ -270,11 +296,11 @@ const Sectiontestimonial = () => {
         <div className="max-w-6xl mx-auto">
           <div className="mb-10 text-center md:text-left">
             <h1 className="text-4xl font-medium text-neutral-800">
-              Our Testimonials
+              What customers say
             </h1>
             <p className="text-base/6 text-neutral-600 max-w-sm mt-2 mx-auto md:mx-0">
-              See what our customers are saying as they build and launch
-              projects at lightning speed.
+              Real feedback from people who've ordered custom prints, straight
+              off our reviews.
             </p>
           </div>
 
@@ -282,24 +308,10 @@ const Sectiontestimonial = () => {
             {/* Image Card - spans 2 rows */}
             <div className="md:row-span-2 relative rounded-lg overflow-hidden mx-auto md:mx-0 w-80">
               <img
-                src="https://assets.prebuiltui.com/images/components/feature-sections/feature-person-img.png"
-                alt="Testimonial"
+                src="https://images.unsplash.com/photo-1503341504253-dff4815485f1?q=80&w=600&auto=format&fit=crop"
+                alt="Customer wearing a custom printed hoodie"
                 className="w-full h-full object-cover object-top"
               />
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 size-11.5 rounded-full bg-white/40 flex items-center justify-center cursor-pointer">
-                <svg
-                  width="12"
-                  height="14"
-                  viewBox="0 0 12 14"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                >
-                  <path
-                    d="M2.25 13.193A1.5 1.5 0 0 1 0 11.894V1.502a1.5 1.5 0 0 1 2.25-1.3l9 5.197c1 .577 1 2.02 0 2.598z"
-                    fill="#fff"
-                  />
-                </svg>
-              </div>
               <div className="absolute bottom-0 left-0 right-0 bg-white/10 rounded-b-lg backdrop-blur-sm p-5">
                 <div className="flex gap-1.5 mb-4">
                   {Array(5)
@@ -321,8 +333,8 @@ const Sectiontestimonial = () => {
                     ))}
                 </div>
                 <p className="text-sm/5.5 text-neutral-50">
-                  Rad.Clo components helped us move faster without sacrificing
-                  design quality.
+                  Ordered a hoodie with my own design on it — fit and print
+                  quality both exceeded what I expected for the price.
                 </p>
               </div>
             </div>
@@ -386,44 +398,44 @@ const FAQ = () => {
 
   const faqs = [
     {
-      question: "What is included in the Starter plan?",
+      question: "How long does printing and delivery take?",
       answer:
-        "The Starter plan includes access to all basic features, 5GB of storage, and email support. It's perfect for individuals and small projects.",
+        "Custom prints are made to order, so please allow 3-5 business days for printing, plus delivery time based on your location. We'll confirm an estimated delivery date when we reach out after you place your order.",
     },
     {
-      question: "Do you offer a free trial?",
+      question: "What file formats can I upload?",
       answer:
-        "Yes, we offer a 14-day free trial for all our plans. No credit card is required to start.",
+        "PNG, JPG, and SVG all work. For the sharpest print, upload the highest-resolution image you have — a transparent-background PNG usually gives the cleanest result.",
     },
     {
-      question: "Can I switch plans later?",
+      question: "Is there a minimum order quantity?",
       answer:
-        "Absolutely! You can upgrade or downgrade your plan at any time from your account settings.",
+        "No minimum for individual orders — order just one shirt if that's all you need. For bulk or corporate orders (20+ pieces), mention the quantity on the Contact page for custom pricing.",
     },
     {
-      question: "What payment methods do you accept?",
+      question: "What printing method do you use?",
       answer:
-        "We accept all major credit cards (Visa, MasterCard, American Express) and PayPal.",
+        "We use DTF (Direct-to-Film) printing, which holds up well to washing and works on a wide range of fabric colors, including dark garments.",
     },
     {
-      question: "How secure is my data?",
+      question: "Can I print on both the front and back?",
       answer:
-        "We use industry-standard encryption and security protocols to ensure your data is safe and protected at all times.",
+        "Yes — the customizer lets you add a design to the front and back independently. Printing both sides adds an additional print fee, shown in the price breakdown before you add to cart.",
     },
     {
-      question: "How does the 2% donation work?",
+      question: "What sizes are available?",
       answer:
-        "We pledge to donate 2% of our annual revenue to environmental causes and non-profit organizations.",
+        "S through 2XL across all our garment categories. If you're unsure which size to pick, our oversized tees are designed to run roomy — check the fit description on each product.",
     },
     {
-      question: "Can I integrate this platform with other tools?",
+      question: "Can I return or exchange a custom print?",
       answer:
-        "Yes, we offer seamless integration with popular tools like Slack, Trello, and Google Workspace.",
+        "Since every custom item is printed specifically for your order, we can't accept returns for a change of mind. If there's a print defect or the wrong item arrives, contact us and we'll make it right.",
     },
     {
-      question: "What makes your platform different?",
+      question: "How do I track my order?",
       answer:
-        "Our platform is built with a focus on user experience, speed, and reliability, ensuring you get the best results with minimal effort.",
+        "We'll reach out by phone or email after you place your order to confirm details and keep you posted as it moves through printing and shipping.",
     },
   ];
 

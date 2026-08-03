@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const SocialIcon = ({ d }: { d: string }) => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
@@ -22,6 +25,9 @@ const SOCIALS = [
 ];
 
 export default function Footer() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/admin")) return null;
+
   return (
     <footer className="bg-white border-t border-neutral-200 pt-16 pb-8 px-4 font-poppins">
       <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-10">

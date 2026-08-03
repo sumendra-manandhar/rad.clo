@@ -4,7 +4,6 @@ import React, { useRef, Suspense, useEffect, useMemo, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import {
   useGLTF,
-  useTexture,
   Decal,
   OrbitControls,
   Environment,
@@ -32,6 +31,46 @@ class DecalBoundary extends React.Component {
   }
 }
 
+// Loads a texture manually (instead of drei's Suspense-coupled useTexture)
+// so a failed load is logged clearly instead of the design just silently
+// never appearing. Returns null until the texture is ready.
+function useDecalTexture(src) {
+  const [texture, setTexture] = useState(null);
+
+  useEffect(() => {
+    if (!src) {
+      setTexture(null);
+      return;
+    }
+    let cancelled = false;
+    setTexture(null);
+
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      src,
+      (tex) => {
+        if (cancelled) {
+          tex.dispose();
+          return;
+        }
+        if ("colorSpace" in tex) tex.colorSpace = THREE.SRGBColorSpace;
+        tex.needsUpdate = true;
+        setTexture(tex);
+      },
+      undefined,
+      (err) => {
+        console.error("[TShirtViewer] failed to load design image:", src, err);
+      }
+    );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return texture;
+}
+
 // ── Decal projected onto one shirt panel ──────────────────────────────────────
 // Rather than guessing a single "main" mesh (which can miss the correct
 // panel entirely), we try the decal against every real panel of the shirt.
@@ -39,38 +78,57 @@ class DecalBoundary extends React.Component {
 // geometry (harmless, invisible) — whichever panel it does land on shows
 // the design, wrapped correctly to that panel's curved surface.
 function ShirtDecal({ mesh, anchor, decal }) {
-  const texture = useTexture(decal.src);
+  const texture = useDecalTexture(decal.src);
 
-  useEffect(() => {
-    if (!texture) return;
-    if ("colorSpace" in texture) texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-  }, [texture]);
+  // A stable ref-like object — recreating {current: mesh} on every render
+  // was making Decal's internal effect (which depends on this reference)
+  // tear down and rebuild every single render instead of only when the
+  // mesh actually changes.
+  const meshRef = useMemo(() => ({ current: mesh }), [mesh]);
 
   const scale = useMemo(() => {
     const baseSize = Math.max(anchor.printWidth * (decal.scale || 1), 0.05);
     return [baseSize, baseSize, anchor.depth];
   }, [anchor, decal]);
 
+  // Texture not loaded yet (or failed) — render nothing rather than a
+  // blank/white decal square.
+  if (!texture) return null;
+
   return (
     <Decal
-      mesh={{ current: mesh }}
+      mesh={meshRef}
       position={anchor.position}
-      // IMPORTANT: this must be a NUMBER, not an array like [0, isBack ? Math.PI : 0, ...].
-      // A number tells drei's Decal to auto-orient itself to the nearest
-      // surface normal, which is what makes it wrap a curved surface
-      // correctly instead of stamping on at a fixed flat angle. An array
-      // skips that auto-orientation step entirely — that was the main
-      // cause of the design not sitting properly on the shirt.
-      // Math.PI is added as a base correction for this model's surface
-      // normals (otherwise the artwork renders upside down); the design's
-      // own rotation slider is layered on top of that.
-      rotation={Math.PI + (decal.rotation || 0)}
+      // Two modes, matching the two branches in the `anchor` calculation above:
+      //
+      // - If we have a Blender-authored anchor, `anchor.rotationOverride` is
+      //   an ARRAY [x,y,z]. Passing an array to Decal uses that exact
+      //   rotation as-is (no guessing) — this is the reliable path.
+      //
+      // - Otherwise we pass a NUMBER, which tells drei's Decal to
+      //   auto-orient itself to the nearest surface normal (needed for the
+      //   fallback heuristic, since we don't know the real surface angle at
+      //   the guessed point). Math.PI is a base correction for this model's
+      //   normals (otherwise the artwork renders upside down).
+      rotation={
+        anchor.rotationOverride || Math.PI + (decal.rotation || 0)
+      }
       scale={scale}
     >
       <meshStandardMaterial
         map={texture}
         transparent
+        // Explicitly true: drei's Decal defaults this to FALSE, which means
+        // the design always renders on top of everything regardless of
+        // actual depth. This model has layered mesh construction (an outer
+        // shell plus an inner lining very close behind it in places), so if
+        // the decal's nearest-surface search ever catches a vertex on the
+        // inner layer instead of the outer one, depthTest:false made it
+        // render straight through the visible fabric — looking like a
+        // disconnected floating sticker rather than sitting on the shirt.
+        // With depthTest on, that case gets correctly hidden behind the
+        // outer surface instead.
+        depthTest
         polygonOffset
         polygonOffsetFactor={-4}
         roughness={0.85}
@@ -140,31 +198,88 @@ function TShirtModel({ color, decal, autoRotate = true }) {
     return { scale: s, center: c };
   }, [cloned]);
 
-  // A single canonical chest/back anchor point (in model-local space) that
-  // every panel attempt aims at — keeps placement consistent no matter
-  // which panel ends up actually catching it.
+  // ── Alignment: this is the part that decides WHERE the design sits ──────────
+  //
+  // Two ways this can work, and it automatically picks whichever is available:
+  //
+  // 1) BEST — if your .blend/.glb has an object (Empty or small Plane) named
+  //    exactly "DecalAnchor_Front" and/or "DecalAnchor_Back", we use ITS
+  //    exact position + rotation from Blender directly. This is the reliable
+  //    fix: you place the marker exactly on the chest in Blender, export,
+  //    and the code just uses it — no guessing involved. See SETUP.md for
+  //    the step-by-step Blender instructions.
+  //
+  // 2) FALLBACK — if no such object exists, we estimate a chest/upper-back
+  //    point from the model's overall bounding box (the numbers below —
+  //    0.12, 0.55, etc. — are the ones to hand-tune if you don't want to
+  //    touch Blender).
   const anchor = useMemo(() => {
     if (!modelBox || modelBox.isEmpty() || !decal) return null;
+
+    const anchorNode = cloned.getObjectByName(
+      decal.side === "back" ? "DecalAnchor_Back" : "DecalAnchor_Front"
+    );
+
+    if (anchorNode) {
+      const size = new THREE.Vector3();
+      modelBox.getSize(size);
+
+      // Compute the anchor's transform relative to `cloned` itself (not
+      // the whole scene) — this matches the coordinate space the decal
+      // geometry gets computed in, regardless of how many empty parent
+      // nodes sit between the anchor and the model root in the glTF.
+      const savedPos = cloned.position.clone();
+      const savedQuat = cloned.quaternion.clone();
+      const savedScale = cloned.scale.clone();
+      cloned.position.set(0, 0, 0);
+      cloned.quaternion.identity();
+      cloned.scale.set(1, 1, 1);
+      cloned.updateMatrixWorld(true);
+
+      const worldPos = new THREE.Vector3();
+      const worldQuat = new THREE.Quaternion();
+      const worldScale = new THREE.Vector3();
+      anchorNode.matrixWorld.decompose(worldPos, worldQuat, worldScale);
+      const euler = new THREE.Euler().setFromQuaternion(worldQuat);
+
+      cloned.position.copy(savedPos);
+      cloned.quaternion.copy(savedQuat);
+      cloned.scale.copy(savedScale);
+      cloned.updateMatrixWorld(true);
+
+      return {
+        position: [
+          worldPos.x + (decal.offsetX || 0) * size.x * 0.15,
+          worldPos.y + (decal.offsetY || 0) * size.y * 0.15,
+          worldPos.z,
+        ],
+        // Use the authored rotation directly instead of the auto-orient
+        // number trick — Blender already told us the correct facing.
+        rotationOverride: [euler.x, euler.y, euler.z + (decal.rotation || 0)],
+        printWidth: Math.min(size.x, size.y) * 0.55,
+        depth: Math.max(size.x, size.y, size.z, 0.3) * 0.8,
+      };
+    }
+
+    // ── Fallback heuristic (no Blender anchor found) ──────────────────────
     const size = new THREE.Vector3();
     modelBox.getSize(size);
     const c = new THREE.Vector3();
     modelBox.getCenter(c);
     const isBack = decal.side === "back";
     const zPos = isBack
-      ? modelBox.min.z + size.z * 0.12
-      : modelBox.max.z - size.z * 0.12;
+      ? modelBox.min.z + size.z * 0.12 // how far in from the BACK face — increase to sit deeper/safer inside the mesh
+      : modelBox.max.z - size.z * 0.12; // how far in from the FRONT face
     return {
       position: [
         c.x + (decal.offsetX || 0) * size.x * 0.5,
-        c.y + size.y * 0.12 + (decal.offsetY || 0) * size.y * 0.5,
+        c.y + size.y * 0.12 + (decal.offsetY || 0) * size.y * 0.5, // 0.12 = chest height above the model's vertical center — raise/lower this
         zPos,
       ],
-      printWidth: Math.min(size.x, size.y) * 0.55,
-      // Generous depth so the projection box always fully pierces the
-      // fabric, regardless of small inaccuracies in the anchor point above.
+      printWidth: Math.min(size.x, size.y) * 0.55, // how wide the design starts out relative to the shirt's width
       depth: Math.max(size.x, size.y, size.z, 0.3) * 0.8,
     };
-  }, [modelBox, decal]);
+  }, [modelBox, decal, cloned]);
 
   return (
     <group ref={group}>
