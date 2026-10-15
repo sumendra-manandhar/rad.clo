@@ -1,16 +1,16 @@
 "use client";
 
 import React, { useRef, Suspense, useEffect, useMemo, useState } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree, createPortal } from "@react-three/fiber";
 import {
   useGLTF,
-  useTexture,
   Decal,
   OrbitControls,
   Environment,
   ContactShadows,
 } from "@react-three/drei";
 import * as THREE from "three";
+import { getLocation } from "@/lib/print-locations";
 
 // Small safety net: if projecting a decal onto a particular shirt panel
 // fails for any reason, swallow it and just skip that panel instead of
@@ -32,45 +32,133 @@ class DecalBoundary extends React.Component {
   }
 }
 
-// ── Decal projected onto one shirt panel ──────────────────────────────────────
-// Rather than guessing a single "main" mesh (which can miss the correct
-// panel entirely), we try the decal against every real panel of the shirt.
-// Panels the anchor point doesn't actually land near just come out as empty
-// geometry (harmless, invisible) — whichever panel it does land on shows
-// the design, wrapped correctly to that panel's curved surface.
-function ShirtDecal({ mesh, anchor, decal }) {
-  const texture = useTexture(decal.src);
+// Artwork with a solid white background (e.g. the gallery JPGs) would show as
+// a white square on coloured shirts. For images with no transparency, make
+// the white that touches the image border transparent with a flood fill —
+// white *inside* the artwork (eyes, letter holes) is left alone.
+function knockOutBackground(img) {
+  const max = 1024;
+  const s = Math.min(1, max / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * s));
+  const h = Math.max(1, Math.round(img.height * s));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+
+  for (let i = 3; i < px.length; i += 4) if (px[i] < 250) return canvas; // already has transparency
+
+  const isBg = (i) => px[i] > 235 && px[i + 1] > 235 && px[i + 2] > 235;
+  const seen = new Uint8Array(w * h);
+  const stack = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+  while (stack.length) {
+    const p = stack.pop();
+    if (seen[p]) continue;
+    seen[p] = 1;
+    if (!isBg(p * 4)) continue;
+    px[p * 4 + 3] = 0;
+    const x = p % w;
+    if (x > 0) stack.push(p - 1);
+    if (x < w - 1) stack.push(p + 1);
+    if (p >= w) stack.push(p - w);
+    if (p < w * (h - 1)) stack.push(p + w);
+  }
+  ctx.putImageData(data, 0, 0);
+  return canvas;
+}
+
+// Loads a texture manually (instead of drei's Suspense-coupled useTexture)
+// so a failed load is logged clearly instead of the design just silently
+// never appearing. Returns null until the texture is ready.
+function useDecalTexture(src) {
+  const [texture, setTexture] = useState(null);
 
   useEffect(() => {
-    if (!texture) return;
-    if ("colorSpace" in texture) texture.colorSpace = THREE.SRGBColorSpace;
-    texture.needsUpdate = true;
-  }, [texture]);
+    if (!src) {
+      setTexture(null);
+      return;
+    }
+    let cancelled = false;
+    setTexture(null);
 
-  const scale = useMemo(() => {
-    const baseSize = Math.max(anchor.printWidth * (decal.scale || 1), 0.05);
-    return [baseSize, baseSize, anchor.depth];
-  }, [anchor, decal]);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (cancelled) return;
+      let source = img;
+      try {
+        source = knockOutBackground(img);
+      } catch (err) {
+        // Cross-origin image without CORS headers: use it as-is.
+        console.warn("[TShirtViewer] couldn't process design background:", err);
+      }
+      const tex = new THREE.CanvasTexture(source);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      setTexture(tex);
+    };
+    img.onerror = (err) => console.error("[TShirtViewer] failed to load design image:", src, err);
+    img.src = src;
 
+    return () => {
+      cancelled = true;
+    };
+  }, [src]);
+
+  return texture;
+}
+
+// ── One print, projected onto every shirt panel it overlaps ───────────────────
+// Each Decal is rendered *inside* its panel mesh (via createPortal) because
+// drei's Decal builds geometry in the mesh's own local space. This model's
+// panels are stored Z-up and stood upright by a -90° parent rotation, so a
+// decal attached anywhere else misses that rotation and lies flat under the
+// shirt.
+function PrintDecal({ src, placement }) {
+  const texture = useDecalTexture(src);
+
+  // Artwork width comes from the placement; height follows its aspect ratio.
+  const fit = useMemo(() => {
+    const img = texture?.image;
+    const aspect = img?.width && img?.height ? img.width / img.height : 1;
+    return [placement.width, placement.width / aspect];
+  }, [texture, placement]);
+
+  if (!texture) return null;
+
+  return placement.panels.map(({ mesh, position, rotation, unit }) => (
+    <React.Fragment key={mesh.uuid}>
+      {createPortal(
+        <DecalBoundary>
+          <PanelDecal
+            mesh={mesh}
+            position={position}
+            rotation={rotation}
+            scale={[fit[0] * unit, fit[1] * unit, placement.depth * unit]}
+            texture={texture}
+          />
+        </DecalBoundary>,
+        mesh
+      )}
+    </React.Fragment>
+  ));
+}
+
+function PanelDecal({ mesh, position, rotation, scale, texture }) {
+  const meshRef = useMemo(() => ({ current: mesh }), [mesh]);
   return (
-    <Decal
-      mesh={{ current: mesh }}
-      position={anchor.position}
-      // IMPORTANT: this must be a NUMBER, not an array like [0, isBack ? Math.PI : 0, ...].
-      // A number tells drei's Decal to auto-orient itself to the nearest
-      // surface normal, which is what makes it wrap a curved surface
-      // correctly instead of stamping on at a fixed flat angle. An array
-      // skips that auto-orientation step entirely — that was the main
-      // cause of the design not sitting properly on the shirt.
-      // Math.PI is added as a base correction for this model's surface
-      // normals (otherwise the artwork renders upside down); the design's
-      // own rotation slider is layered on top of that.
-      rotation={Math.PI + (decal.rotation || 0)}
-      scale={scale}
-    >
+    <Decal mesh={meshRef} position={position} rotation={rotation} scale={scale}>
       <meshStandardMaterial
         map={texture}
         transparent
+        // drei defaults depthTest to false, which draws the print through the
+        // fabric from every angle. Keep it on so the shirt hides it correctly.
+        depthTest
         polygonOffset
         polygonOffsetFactor={-4}
         roughness={0.85}
@@ -80,46 +168,51 @@ function ShirtDecal({ mesh, anchor, decal }) {
   );
 }
 
+const UP = new THREE.Vector3(0, 1, 0);
+const OUTWARD = {
+  front: new THREE.Vector3(0, 0, 1),
+  back: new THREE.Vector3(0, 0, -1),
+  left: new THREE.Vector3(1, 0, 0), // wearer's left = +X when the front faces +Z
+  right: new THREE.Vector3(-1, 0, 0),
+};
+
 // ── The actual GLB model ──────────────────────────────────────────────────────
-function TShirtModel({ color, decal, autoRotate = true }) {
+function TShirtModel({ color, prints, autoRotate = true }) {
   const group = useRef();
   const { scene } = useGLTF("/tshirt.glb");
 
   // Clone so color changes don't mutate the cached asset
-  const cloned = React.useMemo(() => scene.clone(true), [scene]);
-  const [meshList, setMeshList] = useState([]);
-  const [modelBox, setModelBox] = useState(null);
+  const cloned = useMemo(() => scene.clone(true), [scene]);
 
-  // Apply color to every mesh in the model (unchanged) — and, separately,
-  // collect the mesh list + overall bounding box used for decal placement.
-  useEffect(() => {
-    const hexColor = new THREE.Color(color);
-    const list = [];
-    const box = new THREE.Box3();
-
+  // Collect the shirt panels once, before any decal meshes are attached to
+  // them, with each panel's transform and bounds relative to the model root.
+  const { panels, rootBox } = useMemo(() => {
+    cloned.updateWorldMatrix(true, true);
+    const rootInv = cloned.matrixWorld.clone().invert();
+    const panels = [];
+    const rootBox = new THREE.Box3();
     cloned.traverse((obj) => {
-      if (obj.isMesh) {
-        if (!obj.userData.materialCloned) {
-          obj.material = obj.material.clone();
-          obj.userData.materialCloned = true;
-        }
-        obj.material.color.set(hexColor);
-        obj.material.needsUpdate = true;
-        obj.castShadow = true;
-        obj.receiveShadow = true;
-
-        if (obj.geometry) {
-          if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
-          obj.geometry.computeBoundingBox();
-          box.union(obj.geometry.boundingBox);
-          list.push(obj);
-        }
-      }
+      if (!obj.isMesh || !obj.geometry) return;
+      obj.material = obj.material.clone();
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+      if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
+      obj.geometry.computeBoundingBox();
+      const toRoot = rootInv.clone().multiply(obj.matrixWorld);
+      const box = obj.geometry.boundingBox.clone().applyMatrix4(toRoot);
+      rootBox.union(box);
+      panels.push({ mesh: obj, box, fromRoot: toRoot.clone().invert() });
     });
+    return { panels, rootBox };
+  }, [cloned]);
 
-    setMeshList(list);
-    setModelBox(box);
-  }, [color, cloned]);
+  useEffect(() => {
+    const hex = new THREE.Color(color);
+    panels.forEach(({ mesh }) => {
+      mesh.material.color.set(hex);
+      mesh.material.needsUpdate = true;
+    });
+  }, [color, panels]);
 
   // Gentle auto-rotation (paused when user is dragging via OrbitControls)
   useFrame((_, delta) => {
@@ -129,7 +222,7 @@ function TShirtModel({ color, decal, autoRotate = true }) {
   });
 
   // Center & scale the model to fit nicely — compute once per loaded model
-  const { scale, center } = React.useMemo(() => {
+  const { scale, center } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(cloned);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -140,31 +233,83 @@ function TShirtModel({ color, decal, autoRotate = true }) {
     return { scale: s, center: c };
   }, [cloned]);
 
-  // A single canonical chest/back anchor point (in model-local space) that
-  // every panel attempt aims at — keeps placement consistent no matter
-  // which panel ends up actually catching it.
-  const anchor = useMemo(() => {
-    if (!modelBox || modelBox.isEmpty() || !decal) return null;
-    const size = new THREE.Vector3();
-    modelBox.getSize(size);
-    const c = new THREE.Vector3();
-    modelBox.getCenter(c);
-    const isBack = decal.side === "back";
-    const zPos = isBack
-      ? modelBox.min.z + size.z * 0.12
-      : modelBox.max.z - size.z * 0.12;
-    return {
-      position: [
-        c.x + (decal.offsetX || 0) * size.x * 0.5,
-        c.y + size.y * 0.12 + (decal.offsetY || 0) * size.y * 0.5,
-        zPos,
-      ],
-      printWidth: Math.min(size.x, size.y) * 0.55,
-      // Generous depth so the projection box always fully pierces the
-      // fabric, regardless of small inaccuracies in the anchor point above.
-      depth: Math.max(size.x, size.y, size.z, 0.3) * 0.8,
-    };
-  }, [modelBox, decal]);
+  // Resolve each print (area in inches from lib/print-locations + the
+  // customer's placement inside it) to a point on the fabric, then into
+  // every overlapping panel's local space.
+  const placements = useMemo(() => {
+    if (!prints?.length || rootBox.isEmpty()) return [];
+    const size = rootBox.getSize(new THREE.Vector3());
+    const mid = rootBox.getCenter(new THREE.Vector3());
+    const inch = size.y / 31; // the model is roughly a 31″-long garment
+
+    cloned.updateWorldMatrix(true, true);
+    const rootToWorld = cloned.matrixWorld.clone();
+    const worldToRoot = rootToWorld.clone().invert();
+    const raycaster = new THREE.Raycaster();
+    const meshes = panels.map((p) => p.mesh);
+
+    return prints
+      .map((print) => {
+        const loc = getLocation(print.location);
+        if (!loc || !print.src) return null;
+        const pl = print.placement ?? { x: 0.5, y: 0.3, w: 0.5, rotation: 0 };
+        const normal = OUTWARD[loc.view];
+        const sleeve = loc.view === "left" || loc.view === "right";
+        // Viewer's right when looking at this side of the shirt.
+        const right = UP.clone().cross(normal).normalize();
+
+        // Artwork centre on the piece, in inches from the centre line and
+        // from the top of the shoulders.
+        const dx = (pl.x - 0.5) * loc.inches.w * inch;
+        const down = (loc.top + pl.y * loc.inches.h) * inch;
+        const aim = new THREE.Vector3(mid.x, rootBox.max.y - down, mid.z).addScaledVector(right, dx);
+
+        // Fire a ray at the shirt from outside to find the fabric surface.
+        const far = Math.max(size.x, size.z) * 4;
+        raycaster.set(
+          aim.clone().addScaledVector(normal, far).applyMatrix4(rootToWorld),
+          normal.clone().negate().transformDirection(rootToWorld)
+        );
+        const hit = raycaster.intersectObjects(meshes, false)[0];
+        const point = hit
+          ? hit.point.clone().applyMatrix4(worldToRoot)
+          : aim.clone().addScaledVector(normal, (sleeve ? size.x : size.z) / 2);
+
+        const width = pl.w * loc.inches.w * inch;
+        // Shallow projection: deep enough to wrap the curve of the fabric,
+        // too shallow to reach the opposite side of the shirt.
+        const depth = sleeve ? size.x * 0.12 : size.z * 0.35;
+
+        const reach = Math.max(width * 1.5, depth);
+        const decalBox = new THREE.Box3().setFromCenterAndSize(point, new THREE.Vector3(reach, reach, reach));
+
+        const panelPlacements = panels
+          .filter((p) => p.box.intersectsBox(decalBox))
+          .map(({ mesh, fromRoot }) => {
+            const rot = new THREE.Matrix4().extractRotation(fromRoot);
+            const z = normal.clone().applyMatrix4(rot).normalize();
+            const yAxis = UP.clone().applyMatrix4(rot).normalize();
+            const xAxis = yAxis.clone().cross(z).normalize();
+            yAxis.copy(z).cross(xAxis);
+            // The studio's rotation is clockwise as seen by the customer.
+            const basis = new THREE.Matrix4()
+              .makeBasis(xAxis, yAxis, z)
+              .multiply(new THREE.Matrix4().makeRotationZ(-(pl.rotation || 0)));
+            const e = new THREE.Euler().setFromRotationMatrix(basis);
+            const s = new THREE.Vector3();
+            fromRoot.decompose(new THREE.Vector3(), new THREE.Quaternion(), s);
+            return {
+              mesh,
+              position: point.clone().applyMatrix4(fromRoot).toArray(),
+              rotation: [e.x, e.y, e.z],
+              unit: s.x,
+            };
+          });
+
+        return { key: print.id ?? print.location, src: print.src, placement: { width, depth, panels: panelPlacements } };
+      })
+      .filter(Boolean);
+  }, [prints, panels, rootBox, cloned]);
 
   return (
     <group ref={group}>
@@ -173,19 +318,49 @@ function TShirtModel({ color, decal, autoRotate = true }) {
         scale={scale}
         // position computed from the model center so the model stays fixed
         position={[-center.x * scale, -center.y * scale, -center.z * scale]}
-      >
-        {decal &&
-          anchor &&
-          meshList.map((m, i) => (
-            <DecalBoundary key={m.uuid || i}>
-              <Suspense fallback={null}>
-                <ShirtDecal mesh={m} anchor={anchor} decal={decal} />
-              </Suspense>
-            </DecalBoundary>
-          ))}
-      </primitive>
+      />
+      {placements.map((p) => (
+        <PrintDecal key={`${p.key}:${p.src.slice(-40)}`} src={p.src} placement={p.placement} />
+      ))}
     </group>
   );
+}
+
+// ── Turns the camera to face a print location ────────────────────────────────
+const VIEW_ANGLE = { front: 0, back: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 };
+
+function ViewFocus({ view, nonce }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls);
+  const target = useRef(null);
+
+  useEffect(() => {
+    target.current = view ? VIEW_ANGLE[view] : null;
+  }, [view, nonce]);
+
+  // Let the visitor take over as soon as they start dragging.
+  useEffect(() => {
+    if (!controls) return;
+    const cancel = () => (target.current = null);
+    controls.addEventListener("start", cancel);
+    return () => controls.removeEventListener("start", cancel);
+  }, [controls]);
+
+  useFrame((_, dt) => {
+    if (target.current == null || !controls) return;
+    const offset = camera.position.clone().sub(controls.target);
+    const sph = new THREE.Spherical().setFromVector3(offset);
+    const diff = Math.atan2(Math.sin(target.current - sph.theta), Math.cos(target.current - sph.theta));
+    if (Math.abs(diff) < 0.003) {
+      target.current = null;
+      return;
+    }
+    sph.theta += diff * Math.min(1, dt * 6);
+    camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(sph));
+    controls.update();
+  });
+
+  return null;
 }
 
 // Preload so there's no flicker
@@ -202,10 +377,14 @@ function Loader() {
 }
 
 // ── Main exported component ───────────────────────────────────────────────────
-// decal: { src, scale, offsetX, offsetY, rotation, side } | null
+// prints: [{ id?, location, src, placement }] — see lib/print-locations
+// view:   "front" | "back" | "left" | "right" — turns the camera to face it
+//         (bump viewNonce to re-focus the same view after the user dragged)
 export default function TShirtViewer({
   color,
-  decal = null,
+  prints = [],
+  view = null,
+  viewNonce = 0,
   autoRotate = true,
 }) {
   // Keep a stable ref to OrbitControls so we can set a fixed target once.
@@ -257,7 +436,9 @@ export default function TShirtViewer({
       // a tighter/looser framing, tweak the Z and Y values here.
       camera={{ position: [0, 0.8, 3.2], fov: 60 }}
       style={{ background: "transparent", width: "100%", height: "100%" }}
-      gl={{ antialias: true, alpha: true }}
+      // preserveDrawingBuffer lets the customizer snapshot the canvas
+      // (canvas.toDataURL) as an order preview for the admin.
+      gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
     >
       {/* Lighting */}
       <ambientLight intensity={0.6} />
@@ -287,14 +468,17 @@ export default function TShirtViewer({
       <Suspense fallback={<Loader />}>
         <TShirtModel
           color={color}
-          decal={decal}
+          prints={prints}
           autoRotate={isAutoRotating && autoRotate}
         />
       </Suspense>
 
+      <ViewFocus view={view} nonce={viewNonce} />
+
       {/* OrbitControls – drag pauses auto-rotation and it resumes after 10 seconds */}
       <OrbitControls
         ref={controlsRef}
+        makeDefault
         enablePan={false}
         enableZoom={true}
         minDistance={2.2}

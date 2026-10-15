@@ -1,29 +1,21 @@
 import type { Metadata } from "next";
+import { Inter, Bricolage_Grotesque, Poppins } from "next/font/google";
 import "./globals.css";
-import Navbar from "@/components/Navbar";
-import Footer from "@/components/Footer";
-import { CartProvider } from "@/lib/cart-context";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage" });
+const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800", "900"], variable: "--font-poppins" });
 
 export const metadata: Metadata = {
-  title: "Rad.Clo — Custom T-Shirts & Apparel",
+  title: "Rad.Clo — Custom T-Shirt Printing with Live 3D Preview",
   description:
-    "Design your own custom t-shirts, hoodies and apparel. Upload your artwork or pick a print, preview it in 3D, and order.",
+    "Design custom t-shirts, hoodies and sweatshirts. Pick a print from our design store or upload your own, preview it on a 3D shirt, and order.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <body className="antialiased font-poppins min-h-screen flex flex-col bg-white">
-        <CartProvider>
-          <Navbar />
-          <main className="flex-1">{children}</main>
-          <Footer />
-        </CartProvider>
-      </body>
+    <html lang="en" className={`${inter.variable} ${bricolage.variable} ${poppins.variable}`}>
+      <body className="antialiased min-h-screen">{children}</body>
     </html>
   );
 }
