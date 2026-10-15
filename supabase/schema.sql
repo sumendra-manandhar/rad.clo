@@ -1,6 +1,9 @@
 -- Rad.Clo schema for the Supabase storage driver (lib/server/store.ts).
 -- Run in the Supabase SQL editor. Safe to re-run.
 --
+-- If your database has the orders table from the August version of the site
+-- (customer_name / total_price columns), also run supabase/upgrade-orders.sql.
+--
 -- It also creates the public Storage bucket `print-designs`, where uploaded
 -- designs, garment photos, customer artwork and 3D previews are stored.
 --

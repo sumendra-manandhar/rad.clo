@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import type { Category, Design, Order, OrderStatus, Settings } from "@/lib/types";
+import { ORDER_STATUSES, type Category, type Design, type Order, type OrderStatus, type Settings } from "@/lib/types";
 import { resolvePricing } from "@/lib/garments";
 import { SEED_CATEGORIES, SEED_DESIGNS } from "@/lib/server/seed";
 
@@ -285,13 +285,19 @@ type CategoryRow = {
 };
 type OrderRow = {
   id: string;
-  number: number;
-  customer: Order["customer"];
-  items: Order["items"];
-  total: number;
-  status: OrderStatus;
+  number: number | null;
+  customer: Order["customer"] | null;
+  items: Order["items"] | null;
+  total: number | null;
+  status: string;
   note: string | null;
   created_at: string;
+  // Columns from the August version of the site (see supabase/upgrade-orders.sql)
+  customer_name?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  email?: string | null;
+  total_price?: number | string | null;
 };
 
 const toDesign = (r: DesignRow): Design => ({
@@ -326,13 +332,22 @@ const toCategory = (r: CategoryRow): Category => ({
   sort: r.sort,
   createdAt: r.created_at,
 });
+// Tolerates rows from the old orders table that haven't been upgraded yet,
+// so the admin never crashes on them.
 const toOrder = (r: OrderRow): Order => ({
   id: r.id,
-  number: r.number,
-  customer: r.customer,
-  items: r.items,
-  total: r.total,
-  status: r.status,
+  number: r.number ?? 0,
+  customer: r.customer ?? {
+    name: r.customer_name ?? "",
+    phone: r.phone ?? "",
+    email: r.email ?? undefined,
+    address: r.address ?? "",
+  },
+  items: Array.isArray(r.items)
+    ? r.items.map((i) => ({ ...i, prints: Array.isArray(i.prints) ? i.prints : [] }))
+    : [],
+  total: r.total ?? Math.round(Number(r.total_price) || 0),
+  status: (ORDER_STATUSES as readonly string[]).includes(r.status) ? (r.status as OrderStatus) : "pending",
   note: r.note ?? undefined,
   createdAt: r.created_at,
 });
