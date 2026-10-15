@@ -1,9 +1,11 @@
 -- Rad.Clo schema for the Supabase storage driver (lib/server/store.ts).
 -- Run in the Supabase SQL editor. Safe to re-run.
 --
--- Also create a PUBLIC Storage bucket named `print-designs`
--- (Storage → New bucket → "Public bucket"). Uploaded designs, customer
--- artwork and 3D previews are stored there.
+-- It also creates the public Storage bucket `print-designs`, where uploaded
+-- designs, garment photos, customer artwork and 3D previews are stored.
+--
+-- Then run `node scripts/migrate-to-supabase.mjs` to copy your local data
+-- (data/db.json + data/uploads) into Supabase.
 --
 -- The server uses the service_role key, which bypasses row level security.
 -- RLS is enabled with no public policies so the anon key can't read or
@@ -68,3 +70,8 @@ insert into categories (name, slug, description, sort) values
   ('Nature', 'nature', 'Mountains, sun and flowers', 4),
   ('Doodle', 'doodle', 'Playful hand-drawn art', 5)
 on conflict (slug) do nothing;
+
+-- Storage bucket for images (public read; the server uploads with the service key).
+insert into storage.buckets (id, name, public)
+values ('print-designs', 'print-designs', true)
+on conflict (id) do update set public = true;

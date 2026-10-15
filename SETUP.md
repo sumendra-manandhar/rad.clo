@@ -82,11 +82,16 @@ on the 3D model, adjust `top` / `inches.h` there.
 This needs a normal server with a writable disk (your own machine, a VPS,
 Railway, Render with a disk, etc.).
 
-**Supabase (for Vercel / serverless).** Set `NEXT_PUBLIC_SUPABASE_URL` and
-`SUPABASE_SERVICE_ROLE_KEY` in `.env.local`, run `supabase/schema.sql` in the
-SQL editor, and create a public Storage bucket named `print-designs`. The
-store switches to Supabase automatically. The Supabase driver hasn't been run
-against a live project yet, so try it on a test project first.
+**Supabase (for Vercel / serverless).**
+1. Supabase → SQL Editor → paste and run `supabase/schema.sql` (creates the
+   tables and the public `print-designs` image bucket).
+2. In `.env.local` set `NEXT_PUBLIC_SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` (Project Settings → API Keys → service_role).
+3. `node scripts/migrate-to-supabase.mjs` copies local categories, designs,
+   prices/visibility, orders and uploaded images into Supabase (safe to re-run).
+4. Restart the server — the admin overview shows "Storage: Supabase".
+On Vercel, add the same variables (plus `ADMIN_PASSWORD`, `SESSION_SECRET`)
+under Project → Settings → Environment Variables.
 
 ## Design files
 
