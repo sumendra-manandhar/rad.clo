@@ -86,16 +86,31 @@ class LocalStore implements Store {
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       const seeded: DB = { categories: SEED_CATEGORIES, designs: SEED_DESIGNS, orders: [] };
-      await this.write(seeded);
+      try {
+        await this.write(seeded);
+      } catch (writeErr) {
+        // Read-only disk (e.g. Vercel without Supabase configured): keep the
+        // storefront up with the built-in catalogue instead of crashing.
+        if (!isReadOnly(writeErr)) throw writeErr;
+        if (!warnedReadOnly) {
+          warnedReadOnly = true;
+          console.warn(`[store] ${READ_ONLY_MESSAGE} Serving the built-in catalogue read-only.`);
+        }
+      }
       return seeded;
     }
   }
 
   private async write(db: DB) {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const tmp = `${DB_FILE}.${process.pid}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(db, null, 2));
-    await fs.rename(tmp, DB_FILE);
+    try {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      const tmp = `${DB_FILE}.${process.pid}.tmp`;
+      await fs.writeFile(tmp, JSON.stringify(db, null, 2));
+      await fs.rename(tmp, DB_FILE);
+    } catch (err) {
+      if (isReadOnly(err)) throw new Error(READ_ONLY_MESSAGE);
+      throw err;
+    }
   }
 
   private mutate<T>(fn: (db: DB) => T): Promise<T> {
@@ -211,8 +226,13 @@ class LocalStore implements Store {
 
   async saveUpload(data: Buffer, ext: string, folder: string) {
     const name = `${folder}-${Date.now()}-${randomUUID().slice(0, 8)}.${ext}`;
-    await fs.mkdir(UPLOAD_DIR, { recursive: true });
-    await fs.writeFile(path.join(UPLOAD_DIR, name), data);
+    try {
+      await fs.mkdir(UPLOAD_DIR, { recursive: true });
+      await fs.writeFile(path.join(UPLOAD_DIR, name), data);
+    } catch (err) {
+      if (isReadOnly(err)) throw new Error(READ_ONLY_MESSAGE);
+      throw err;
+    }
     // Files in public/ are only served if present at build time, so uploads
     // are streamed back through app/api/uploads/[file]/route.ts instead.
     return `/api/uploads/${name}`;
@@ -222,6 +242,15 @@ class LocalStore implements Store {
     const name = path.basename(url);
     await fs.rm(path.join(UPLOAD_DIR, name), { force: true });
   }
+}
+
+const READ_ONLY_MESSAGE =
+  "This server's disk is read-only, so nothing can be saved. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to store data in Supabase.";
+let warnedReadOnly = false;
+
+function isReadOnly(err: unknown) {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return code === "EROFS" || code === "EACCES" || code === "EPERM";
 }
 
 function uniqueSlug(base: string, existing: { slug: string }[]) {

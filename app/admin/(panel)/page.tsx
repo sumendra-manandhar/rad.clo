@@ -35,6 +35,18 @@ export default async function AdminOverview() {
     <>
       <PageHeader title="Overview" sub="Your store at a glance." />
 
+      {storeDriver === "local" && process.env.VERCEL && (
+        <div className="mb-6 flex gap-3 rounded-2xl bg-red-50 border border-red-200 p-4 text-sm text-red-900">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <p>
+            Supabase isn&apos;t connected, and Vercel can&apos;t save files — new designs, orders and price changes
+            won&apos;t be saved. Add <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> and{" "}
+            <code className="font-mono">SUPABASE_SERVICE_ROLE_KEY</code> in Vercel → Settings → Environment Variables,
+            then redeploy.
+          </p>
+        </div>
+      )}
+
       {usingDevPassword && (
         <div className="mb-6 flex gap-3 rounded-2xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-900">
           <Info className="w-4 h-4 shrink-0 mt-0.5" />
