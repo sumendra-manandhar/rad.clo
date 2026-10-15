@@ -33,8 +33,9 @@ import {
   type Pricing,
 } from "@/lib/garments";
 import {
-  FIXED_PRINT,
+  FIXED_PRINT_SPEC,
   fixedPrintFor,
+  placementFromTop,
   describePlacement,
   getLocation,
   pieceAt,
@@ -73,13 +74,13 @@ const TEXT_FONTS = [
 ];
 const TEXT_COLORS = ["#121212", "#ffffff", "#ff5b1f", "#d4ff3a", "#1E334D", "#c1121f", "#f2c14e"];
 
-/** Default spot for a new design on each piece. */
-const NEW_PLACEMENT: Record<string, PrintPlacement> = {
-  front: FIXED_PRINT.placement,
-  back: { x: 0.5, y: 0.3, w: 11 / 21, rotation: 0 },
-  "left-sleeve": { x: 0.5, y: 0.35, w: 0.45, rotation: 0 },
-  "right-sleeve": { x: 0.5, y: 0.35, w: 0.45, rotation: 0 },
-};
+/** Default spot for a new design: front/back like store prints (top edge 5.5″ down), sleeves centred. */
+function newPlacement(loc: PrintLocation, aspect: number): PrintPlacement {
+  if (loc.view === "front" || loc.view === "back") {
+    return placementFromTop(loc, FIXED_PRINT_SPEC.widthIn, aspect, FIXED_PRINT_SPEC.topIn);
+  }
+  return { x: 0.5, y: 0.35, w: 0.45, rotation: 0 };
+}
 const PIECE_FOR_VIEW: Record<PrintView, string> = { front: "front", back: "back", left: "left-sleeve", right: "right-sleeve" };
 
 function cssVarFont(name: string) {
@@ -195,6 +196,31 @@ export default function CustomizeStudio({
       : []
   );
   const [editorOpen, setEditorOpen] = useState(!initialDesign);
+
+  // The store design's real shape isn't known until its image loads. Once it
+  // does, re-place it so its top edge sits exactly at the fixed spot — unless
+  // the customer has already moved it.
+  const initialBox = useRef(layers[0]?.box);
+  useEffect(() => {
+    if (!initialDesign) return;
+    const img = new Image();
+    img.onload = () => {
+      if (!img.naturalWidth || !img.naturalHeight) return;
+      const aspect = img.naturalWidth / img.naturalHeight;
+      setLayers((prev) =>
+        prev.map((l) => {
+          if (l.type !== "gallery" || l.designId !== initialDesign.id) return l;
+          if (l.box !== initialBox.current) return { ...l, aspect };
+          const spot = fixedPrintFor(locations.map((x) => x.id), aspect);
+          const box = toGuideBox(getLocation(spot.location)!, spot.placement);
+          initialBox.current = box;
+          return { ...l, aspect, box };
+        })
+      );
+    };
+    img.src = initialDesign.image;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selected, setSelected] = useState<string | null>(layers[0]?.id ?? null);
   const [tab, setTab] = useState<Tab>(mode === "upload" ? "upload" : mode === "text" ? "text" : "store");
   const [view, setView] = useState<{ name: PrintView; n: number }>({ name: "front", n: 0 });
@@ -263,7 +289,7 @@ export default function CustomizeStudio({
   const addLayer = (art: Art, aspect = 1) => {
     // Add to the piece being viewed, or the first enabled piece if that one is hidden.
     const loc = locations.find((l) => l.id === PIECE_FOR_VIEW[view.name]) ?? locations[0];
-    const layer = { ...art, id: newId(), aspect, box: toGuideBox(loc, NEW_PLACEMENT[loc.id]) } as Layer;
+    const layer = { ...art, id: newId(), aspect, box: toGuideBox(loc, newPlacement(loc, aspect)) } as Layer;
     setLayers((prev) => [...prev, layer]);
     setSelected(layer.id);
   };
@@ -421,13 +447,14 @@ export default function CustomizeStudio({
   };
 
   const fixed = printed.length === 1 && layers.length === 1 ? printed[0] : null;
+  const fixedSpot = fixed ? fixedPrintFor(locations.map((l) => l.id), fixed.layer.aspect) : fixedPrint;
   const isFixedStorePrint =
     !!fixed &&
     fixed.layer.type === "gallery" &&
-    fixed.loc.id === fixedPrint.location &&
-    Math.abs(fixed.placement.x - fixedPrint.placement.x) < 1e-6 &&
-    Math.abs(fixed.placement.y - fixedPrint.placement.y) < 1e-6 &&
-    Math.abs(fixed.placement.w - fixedPrint.placement.w) < 1e-6 &&
+    fixed.loc.id === fixedSpot.location &&
+    Math.abs(fixed.placement.x - fixedSpot.placement.x) < 1e-6 &&
+    Math.abs(fixed.placement.y - fixedSpot.placement.y) < 1e-6 &&
+    Math.abs(fixed.placement.w - fixedSpot.placement.w) < 1e-6 &&
     fixed.placement.rotation === 0;
 
   const addButton = (
@@ -588,9 +615,9 @@ export default function CustomizeStudio({
               {single ? (
                 <p>
                   <span className="font-semibold">Print:</span>{" "}
-                  {fixedPrint.location === "front"
-                    ? "front chest, 11″ wide, centred."
-                    : `${getLocation(fixedPrint.location)?.label.toLowerCase()}, centred.`}
+                  {fixedSpot.location === "front" || fixedSpot.location === "back"
+                    ? `${fixedSpot.location}, ${(fixedSpot.placement.w * (getLocation(fixedSpot.location)?.inches.w ?? 21)).toFixed(1)}″ wide, centred, top edge ${FIXED_PRINT_SPEC.topIn}″ below the shoulder line.`
+                    : `${getLocation(fixedSpot.location)?.label.toLowerCase()}, centred.`}
                 </p>
               ) : printed.length ? (
                 <ul className="space-y-1">

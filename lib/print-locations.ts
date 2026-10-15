@@ -73,21 +73,37 @@ export const PRINT_LOCATIONS: PrintLocation[] = [
 
 export const DEFAULT_LOCATION = "front";
 
-/** Where store designs print unless the customer customises: front chest, 11″ wide. */
-export const FIXED_PRINT: { location: string; placement: PrintPlacement } = {
-  location: "front",
-  placement: { x: 0.5, y: 0.3, w: 11 / 21, rotation: 0 },
-};
+/** Store designs print 11″ wide, centred, with the top edge 5.5″ below the shoulder line. */
+export const FIXED_PRINT_SPEC = { widthIn: 11, topIn: 5.5 };
 
 /**
- * Fixed spot for store designs given which areas are enabled: front chest,
- * or the same spot on the back if the front is hidden.
+ * Centred placement on a piece whose artwork top edge sits `topIn` inches
+ * below the shoulder line. The width shrinks if a tall design would run off
+ * the bottom of the piece. `aspect` is the artwork's width ÷ height.
  */
-export function fixedPrintFor(visibleIds: string[]) {
-  if (visibleIds.includes("front") || !visibleIds.length) return FIXED_PRINT;
-  if (visibleIds.includes("back")) return { location: "back", placement: FIXED_PRINT.placement };
-  return { location: visibleIds[0], placement: { x: 0.5, y: 0.35, w: 0.45, rotation: 0 } };
+export function placementFromTop(loc: PrintLocation, widthIn: number, aspect: number, topIn: number): PrintPlacement {
+  const a = aspect > 0 ? aspect : 1;
+  const room = loc.top + loc.inches.h - 1 - topIn; // keep 1″ clear of the hem
+  const w = Math.max(1, Math.min(widthIn, loc.inches.w, room * a));
+  const h = w / a;
+  return { x: 0.5, y: (topIn - loc.top + h / 2) / loc.inches.h, w: w / loc.inches.w, rotation: 0 };
 }
+
+/**
+ * The fixed spot for store designs given which print areas are enabled:
+ * the front, or the same spot on the back if the front is hidden.
+ */
+export function fixedPrintFor(visibleIds: string[], aspect = 1): { location: string; placement: PrintPlacement } {
+  const id = visibleIds.includes("front") || !visibleIds.length ? "front" : visibleIds.includes("back") ? "back" : visibleIds[0];
+  const loc = getLocation(id)!;
+  if (loc.view === "front" || loc.view === "back") {
+    return { location: id, placement: placementFromTop(loc, FIXED_PRINT_SPEC.widthIn, aspect, FIXED_PRINT_SPEC.topIn) };
+  }
+  return { location: id, placement: { x: 0.5, y: 0.35, w: 0.45, rotation: 0 } };
+}
+
+/** Fixed spot on the front for a square design. */
+export const FIXED_PRINT = fixedPrintFor(["front"]);
 
 export function getLocation(id: string) {
   return PRINT_LOCATIONS.find((l) => l.id === id);

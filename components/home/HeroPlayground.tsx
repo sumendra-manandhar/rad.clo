@@ -6,7 +6,7 @@ import dynamic from "next/dynamic";
 import { ArrowRight, MousePointer2, Images, Type, Star } from "lucide-react";
 import type { Design } from "@/lib/types";
 import { COLORS, formatPrice, garmentFor, visibleLocations, type Pricing } from "@/lib/garments";
-import { fixedPrintFor } from "@/lib/print-locations";
+import { FIXED_PRINT_SPEC, fixedPrintFor, getLocation, placementFromTop } from "@/lib/print-locations";
 
 const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   ssr: false,
@@ -64,14 +64,34 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     .map((l) => (l.view === "left" || l.view === "right" ? "Sleeves" : l.label))
     .filter((v, i, a) => a.indexOf(v) === i)
     .join(" · ");
+  // Real shape of each design image, so its top edge lands exactly 5.5″ below the shoulder.
+  const [aspects, setAspects] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!design || aspects[design.id]) return;
+    const img = new Image();
+    img.onload = () =>
+      img.naturalWidth && img.naturalHeight &&
+      setAspects((a) => ({ ...a, [design.id]: img.naturalWidth / img.naturalHeight }));
+    img.src = design.image;
+  }, [design, aspects]);
+
+  const designAspect = design ? aspects[design.id] ?? 1 : 1;
   const prints = useMemo(() => {
     if (!src) return [];
-    const placement =
-      mode === "text" && textArt
-        ? { ...spot.placement, w: Math.min(0.62, 0.42 * Math.max(1, textArt.aspect / 2.2)) }
-        : spot.placement;
+    const loc = getLocation(spot.location)!;
+    let placement = spot.placement;
+    if (mode === "text" && textArt) {
+      // Wider words get a wider print (up to 13″), same 5.5″ top edge.
+      const widthIn = Math.min(13, 9 * Math.max(1, textArt.aspect / 2.2));
+      placement =
+        loc.view === "front" || loc.view === "back"
+          ? placementFromTop(loc, widthIn, textArt.aspect, FIXED_PRINT_SPEC.topIn)
+          : spot.placement;
+    } else if (mode === "design") {
+      placement = fixedPrintFor([spot.location], designAspect).placement;
+    }
     return [{ id: "hero", location: spot.location, src, placement }];
-  }, [src, mode, textArt, spot]);
+  }, [src, mode, textArt, spot, designAspect]);
 
   const base = garmentFor(pricing, "oversized-tee").basePrice;
   const price = base + (src ? pricing.location[spot.location] : 0) + (mode === "design" ? design?.price ?? 0 : 0);
