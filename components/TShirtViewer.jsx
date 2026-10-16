@@ -7,6 +7,7 @@ import {
   Decal,
   OrbitControls,
   Environment,
+  Lightformer,
   ContactShadows,
 } from "@react-three/drei";
 import * as THREE from "three";
@@ -545,8 +546,16 @@ export default function TShirtViewer({
       <directionalLight position={[-4, 2, -3]} intensity={0.5} />
       <pointLight position={[0, -4, 4]} intensity={0.3} />
 
-      {/* Environment for realistic reflections */}
-      <Environment preset="city" />
+      {/* Soft studio lighting, built in the browser. drei's presets download
+          an HDR file from GitHub; if that's slow or blocked the whole canvas
+          stays hidden, so nothing here is fetched. */}
+      <Environment resolution={256} frames={1}>
+        <Lightformer intensity={2} position={[0, 4, 3]} scale={[8, 3, 1]} />
+        <Lightformer intensity={1.2} position={[-5, 1, 2]} rotation-y={Math.PI / 2} scale={[6, 4, 1]} />
+        <Lightformer intensity={1.2} position={[5, 1, 2]} rotation-y={-Math.PI / 2} scale={[6, 4, 1]} />
+        <Lightformer intensity={0.8} position={[0, 1, -5]} rotation-y={Math.PI} scale={[8, 4, 1]} />
+        <Lightformer intensity={0.4} position={[0, -4, 0]} rotation-x={-Math.PI / 2} scale={[8, 8, 1]} />
+      </Environment>
 
       {/* Contact shadow on the ground */}
       <ContactShadows

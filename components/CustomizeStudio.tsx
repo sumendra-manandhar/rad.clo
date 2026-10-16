@@ -20,6 +20,9 @@ import {
   Copy,
   Pencil,
   AlertTriangle,
+  Layers as LayersIcon,
+  Shirt,
+  ChevronDown,
 } from "lucide-react";
 import type { Category, Design, PrintPlacement, PrintSpec } from "@/lib/types";
 import {
@@ -35,8 +38,8 @@ import {
 import {
   AREA_FOR_VIEW,
   FIXED_PRINT_SPEC,
+  PRINT_LOCATIONS,
   areaSize,
-  describePlacement,
   fitInside,
   fixedPrintFor,
   getLocation,
@@ -51,6 +54,8 @@ import { useCart } from "@/lib/cart-context";
 import { SizeChartButton } from "@/components/SizeChart";
 import PositionGuide from "@/components/PositionGuide";
 import { PrintAreasLegend } from "@/components/PrintAreas";
+
+const PRINT_AREA_NUMBER = (l: PrintLocation) => PRINT_LOCATIONS.indexOf(l) + 1;
 
 const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   ssr: false,
@@ -230,6 +235,11 @@ export default function CustomizeStudio({
   }, []);
   const [selected, setSelected] = useState<string | null>(layers[0]?.id ?? null);
   const [tab, setTab] = useState<Tab>(mode === "upload" ? "upload" : mode === "text" ? "text" : "store");
+  // Editor side panel: add artwork, manage what's on the shirt, or pick the shirt itself.
+  const [panel, setPanel] = useState<"add" | "designs" | "shirt">(initialDesign && !mode ? "designs" : "add");
+  // Print area new designs go to (null = the main area of the side being viewed).
+  const [addTo, setAddTo] = useState<string | null>(null);
+  const [newText, setNewText] = useState("YOUR TEXT");
   const [view, setView] = useState<{ name: PrintView; n: number }>({ name: "front", n: 0 });
 
   const [storeCat, setStoreCat] = useState(initialDesign?.category ?? "all");
@@ -311,10 +321,11 @@ export default function CustomizeStudio({
     if (loc.view !== view.name) focus(loc.view);
   };
 
-  /** Adds a design to the main print area of the side the 3D view is facing. */
+  /** Adds a design to the chosen print area (by default the main area of the side being viewed). */
+  const addTarget = locations.find((l) => l.id === (addTo ?? AREA_FOR_VIEW[view.name])) ?? locations[0];
   const addLayer = (art: Art, aspect = 1) => {
-    // That side's main area, or the first enabled area if it's hidden.
-    const loc = locations.find((l) => l.id === AREA_FOR_VIEW[view.name]) ?? locations[0];
+    const loc = addTarget;
+    if (loc.view !== view.name) focus(loc.view);
     const layer = { ...art, id: newId(), area: loc.id, aspect, box: toGuideBox(loc, newPlacement(loc, aspect)) } as Layer;
     setLayers((prev) => [...prev, layer]);
     setSelected(layer.id);
@@ -337,7 +348,7 @@ export default function CustomizeStudio({
     const l = layers.find((x) => x.id === id);
     const loc = l && getLocation(l.area);
     if (loc && loc.view !== view.name) focus(loc.view);
-    if (l?.type === "text") setTab("text");
+    if (l) setPanel("designs");
   };
 
   // Re-render text designs shortly after their text, font or colour changes.
@@ -715,7 +726,6 @@ export default function CustomizeStudio({
       (storeCat === "all" || d.category === storeCat) &&
       (!storeQuery || d.name.toLowerCase().includes(storeQuery.toLowerCase()))
   );
-  const viewing = view.name === "left" || view.name === "right" ? `${view.name} sleeve` : view.name;
 
   return (
     <div className="fixed inset-0 z-45 bg-[#141414] text-paper flex flex-col">
@@ -743,186 +753,304 @@ export default function CustomizeStudio({
 
       <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid lg:grid-cols-[320px_1fr_minmax(380px,460px)]">
         {/* Tools */}
-        <aside className="order-3 lg:order-1 bg-paper text-ink lg:overflow-y-auto p-5 space-y-6">
-          <Section title="Add a design">
-            <div className="grid grid-cols-3 gap-1 p-1 bg-white border border-line rounded-full mb-4">
-              {(
-                [
-                  ["store", "Store", Images],
-                  ["upload", "Upload", Upload],
-                  ["text", "Text", Type],
-                ] as const
-              ).map(([m, label, Icon]) => (
-                <button
-                  key={m}
-                  onClick={() => setTab(m)}
-                  className={`flex items-center justify-center gap-1.5 rounded-full py-2 text-xs font-semibold transition-colors ${
-                    tab === m ? "bg-ink text-paper" : "hover:bg-ink/5"
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" /> {label}
-                </button>
-              ))}
-            </div>
+        <aside className="order-3 lg:order-1 bg-paper text-ink flex flex-col lg:min-h-0">
+          {/* Three clear steps */}
+          <nav className="shrink-0 grid grid-cols-3 gap-1 p-2 border-b border-line bg-white" aria-label="Editor panels">
+            {(
+              [
+                ["add", "Add design", Plus, "Art or text"],
+                ["designs", "My designs", LayersIcon, layers.length ? `${layers.length} on shirt` : "None yet"],
+                ["shirt", "Shirt & size", Shirt, `${size} · ${colorLabel(color)}`],
+              ] as const
+            ).map(([id, label, Icon, sub]) => (
+              <button
+                key={id}
+                onClick={() => setPanel(id)}
+                aria-current={panel === id}
+                className={`relative flex flex-col items-center gap-0.5 rounded-xl px-1 py-2.5 transition-colors ${
+                  panel === id ? "bg-ink text-paper" : "hover:bg-paper text-ink"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="text-xs font-semibold">{label}</span>
+                <span className={`text-[10px] truncate max-w-full ${panel === id ? "text-paper/60" : "text-muted"}`}>{sub}</span>
+                {id === "designs" && layers.length > 0 && (
+                  <span className="absolute top-1.5 right-2 min-w-4 h-4 px-1 rounded-full bg-lime text-ink text-[10px] font-black flex items-center justify-center">
+                    {layers.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </nav>
 
-            {tab === "store" && (
-              <div>
-                <div className="relative mb-2">
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                  <input
-                    value={storeQuery}
-                    onChange={(e) => setStoreQuery(e.target.value)}
-                    placeholder="Search designs"
-                    className="w-full rounded-full border border-line bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-ink"
-                  />
-                </div>
-                <div className="flex gap-1 overflow-x-auto pb-2 mb-1">
-                  {[{ slug: "all", name: "All" }, ...categories].map((c) => (
+          <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-5 space-y-5">
+            {panel === "add" && (
+              <>
+                {/* Where to print first, then what */}
+                <label className="flex items-center justify-between gap-3 rounded-2xl bg-white border border-line px-4 py-3">
+                  <span className="text-xs">
+                    <span className="block font-bold uppercase tracking-widest text-muted">Print on</span>
+                    <span className="block text-muted mt-0.5">{areaSize(addTarget)} max</span>
+                  </span>
+                  <span className="relative">
+                    <select
+                      value={addTarget.id}
+                      onChange={(e) => {
+                        setAddTo(e.target.value);
+                        const l = getLocation(e.target.value);
+                        if (l && l.view !== view.name) focus(l.view);
+                      }}
+                      className="appearance-none rounded-full bg-ink text-paper text-sm font-semibold pl-4 pr-9 py-2 cursor-pointer"
+                    >
+                      {locations.map((l) => (
+                        <option key={l.id} value={l.id}>
+                          {l.label}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-paper" />
+                  </span>
+                </label>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      ["store", "Our designs", Images],
+                      ["upload", "Upload", Upload],
+                      ["text", "Text", Type],
+                    ] as const
+                  ).map(([m, label, Icon]) => (
                     <button
-                      key={c.slug}
-                      onClick={() => setStoreCat(c.slug)}
-                      className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium ${
-                        storeCat === c.slug ? "bg-ink text-paper" : "bg-white border border-line"
+                      key={m}
+                      onClick={() => setTab(m)}
+                      className={`flex flex-col items-center gap-1.5 rounded-2xl border py-3 text-xs font-semibold transition-colors ${
+                        tab === m ? "border-ink bg-white ring-1 ring-ink" : "border-line bg-white/60 hover:border-ink/40"
                       }`}
                     >
-                      {c.name}
+                      <Icon className="w-5 h-5" /> {label}
                     </button>
                   ))}
                 </div>
-                <div className="grid grid-cols-3 gap-1.5 max-h-72 overflow-y-auto">
-                  {storeList.map((d) => (
-                    <button
-                      key={d.id}
-                      onClick={() => addLayer({ type: "gallery", designId: d.id })}
-                      title={`Add ${d.name}`}
-                      className="relative aspect-square rounded-lg border border-line bg-white p-1.5 hover:border-ink"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={d.image} alt={d.name} className="w-full h-full object-contain" loading="lazy" />
-                      {d.price > 0 && (
-                        <span className="absolute bottom-0.5 right-0.5 text-[9px] font-semibold bg-ink text-paper rounded-full px-1 py-px">
-                          +{formatPrice(d.price)}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-muted mt-2">Click a design to add it to the {viewing} you&apos;re viewing.</p>
-              </div>
-            )}
 
-            {tab === "upload" && (
-              <div>
-                <button
-                  onClick={() => fileRef.current?.click()}
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    handleFile(e.dataTransfer.files[0]);
-                  }}
-                  className="w-full border-2 border-dashed border-line rounded-2xl p-5 text-center hover:border-ink bg-white"
-                >
-                  <Upload className="w-5 h-5 mx-auto text-muted mb-2" />
-                  <p className="text-sm font-semibold">Drop artwork or click to upload</p>
-                  <p className="text-xs text-muted mt-1">PNG, JPG, WEBP or SVG · transparent PNG works best</p>
-                </button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                  className="hidden"
-                  onChange={(e) => {
-                    handleFile(e.target.files?.[0]);
-                    e.target.value = "";
-                  }}
-                />
-                {uploadError && <p className="text-xs text-red-600 mt-2">{uploadError}</p>}
-                <p className="text-[11px] text-muted mt-2">It&apos;s added to the {viewing} you&apos;re viewing.</p>
-              </div>
-            )}
-
-            {tab === "text" && (
-              <div className="space-y-3">
-                {sel?.type === "text" ? (
-                  <>
-                    <textarea
-                      value={sel.text}
-                      onChange={(e) => updateLayer(sel.id, { text: e.target.value.slice(0, 80) })}
-                      rows={2}
-                      className="w-full rounded-xl border border-line bg-white px-3 py-2 font-semibold focus:outline-none focus:border-ink resize-none"
-                    />
-                    <div className="flex gap-1 flex-wrap">
-                      {TEXT_FONTS.map((f) => (
+                {tab === "store" && (
+                  <div className="space-y-2.5">
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                      <input
+                        value={storeQuery}
+                        onChange={(e) => setStoreQuery(e.target.value)}
+                        placeholder="Search designs"
+                        className="w-full rounded-full border border-line bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:border-ink"
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {[{ slug: "all", name: "All" }, ...categories.filter((c) => designs.some((d) => d.category === c.slug))].map((c) => (
                         <button
-                          key={f.id}
-                          onClick={() => updateLayer(sel.id, { fontId: f.id })}
-                          className={`px-3 py-1.5 rounded-full text-sm border ${
-                            sel.fontId === f.id ? "bg-ink text-paper border-ink" : "bg-white border-line"
+                          key={c.slug}
+                          onClick={() => setStoreCat(c.slug)}
+                          className={`px-2.5 py-1 rounded-full text-[11px] font-medium ${
+                            storeCat === c.slug ? "bg-ink text-paper" : "bg-white border border-line"
                           }`}
-                          style={{ fontFamily: f.preview }}
                         >
-                          {f.label}
+                          {c.name}
                         </button>
                       ))}
                     </div>
-                    <div className="flex gap-1.5">
-                      {TEXT_COLORS.map((c) => (
-                        <button
-                          key={c}
-                          onClick={() => updateLayer(sel.id, { color: c })}
-                          aria-label={`Text colour ${c}`}
-                          className={`w-7 h-7 rounded-full border border-black/15 ${sel.color === c ? "ring-2 ring-ink ring-offset-2" : ""}`}
-                          style={{ backgroundColor: c }}
-                        />
-                      ))}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-xs text-muted">Select a text design on the guide to edit it, or add a new one.</p>
+                    {storeList.length ? (
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {storeList.map((d) => (
+                          <button
+                            key={d.id}
+                            onClick={() => addLayer({ type: "gallery", designId: d.id })}
+                            title={`Add ${d.name} to the ${addTarget.label.toLowerCase()}`}
+                            className="group relative aspect-square rounded-xl border border-line bg-white p-1.5 hover:border-ink"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={d.image} alt={d.name} className="w-full h-full object-contain" loading="lazy" />
+                            <span className="absolute inset-0 rounded-xl bg-ink/60 text-paper text-[11px] font-semibold flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Plus className="w-3.5 h-3.5" /> Add
+                            </span>
+                            {d.price > 0 && (
+                              <span className="absolute bottom-1 right-1 text-[9px] font-semibold bg-ink text-paper rounded-full px-1.5 py-px">
+                                +{formatPrice(d.price)}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted text-center py-6">No designs match.</p>
+                    )}
+                  </div>
                 )}
-                <button
-                  onClick={() => addText()}
-                  className="w-full flex items-center justify-center gap-1.5 bg-ink text-paper text-sm font-semibold py-2.5 rounded-full hover:bg-flame"
-                >
-                  <Plus className="w-4 h-4" /> Add text
-                </button>
-              </div>
-            )}
-          </Section>
 
-          {layers.length > 0 && (
-            <Section title={`Your designs (${layers.length})`}>
-              <ul className="space-y-1.5">
-                {placed.map(({ layer, loc }) => (
-                  <li key={layer.id}>
-                    <div
-                      className={`flex items-center gap-2.5 rounded-xl border p-1.5 pr-2 ${
-                        selected === layer.id ? "border-ink bg-white" : "border-line bg-white/60"
-                      }`}
+                {tab === "upload" && (
+                  <div>
+                    <button
+                      onClick={() => fileRef.current?.click()}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleFile(e.dataTransfer.files[0]);
+                      }}
+                      className="w-full border-2 border-dashed border-line rounded-2xl px-5 py-8 text-center hover:border-ink bg-white"
                     >
-                      <button onClick={() => selectLayer(layer.id)} className="flex items-center gap-2.5 flex-1 min-w-0 text-left">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={srcOf(layer)} alt="" className="w-9 h-9 rounded-lg object-contain bg-paper p-0.5 shrink-0" />
-                        <span className="min-w-0">
-                          <span className="block text-xs font-semibold truncate">{nameOf(layer)}</span>
-                          <span className={`block text-[11px] ${loc ? "text-muted" : "text-red-600"}`}>
-                            {loc ? `${loc.label} · ${areaSize(loc)}` : "This print area isn't offered — move it"}
-                          </span>
-                        </span>
-                      </button>
-                      <button onClick={() => removeLayer(layer.id)} className="p-1 text-muted hover:text-red-600" aria-label="Remove design">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-          )}
+                      <Upload className="w-6 h-6 mx-auto text-muted mb-2" />
+                      <p className="text-sm font-semibold">Drop your artwork or tap to upload</p>
+                      <p className="text-xs text-muted mt-1">PNG, JPG, WEBP or SVG · transparent PNG works best</p>
+                    </button>
+                    <input
+                      ref={fileRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        handleFile(e.target.files?.[0]);
+                        e.target.value = "";
+                      }}
+                    />
+                    {uploadError && <p className="text-xs text-red-600 mt-2">{uploadError}</p>}
+                  </div>
+                )}
 
-          {options}
+                {tab === "text" && (
+                  <div className="space-y-2.5">
+                    <textarea
+                      value={newText}
+                      onChange={(e) => setNewText(e.target.value.slice(0, 80))}
+                      rows={2}
+                      placeholder="Type your text"
+                      className="w-full rounded-xl border border-line bg-white px-3 py-2 font-semibold focus:outline-none focus:border-ink resize-none"
+                    />
+                    <button
+                      onClick={() => newText.trim() && addText(newText)}
+                      disabled={!newText.trim()}
+                      className="w-full flex items-center justify-center gap-1.5 bg-ink text-paper text-sm font-semibold py-2.5 rounded-full hover:bg-flame disabled:opacity-50"
+                    >
+                      <Plus className="w-4 h-4" /> Add text
+                    </button>
+                    <p className="text-[11px] text-muted">Change the font and colour after adding, in My designs.</p>
+                  </div>
+                )}
+              </>
+            )}
 
-          <div className="rounded-2xl bg-white border border-line p-4">{priceLines}</div>
+            {panel === "designs" &&
+              (layers.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-line bg-white py-12 px-6 text-center">
+                  <LayersIcon className="w-6 h-6 mx-auto text-muted" />
+                  <p className="font-semibold mt-3">Nothing on your shirt yet</p>
+                  <p className="text-xs text-muted mt-1">Add one of our designs, your own artwork or text.</p>
+                  <button
+                    onClick={() => setPanel("add")}
+                    className="mt-5 inline-flex items-center gap-1.5 bg-ink text-paper text-sm font-semibold px-5 py-2.5 rounded-full hover:bg-flame"
+                  >
+                    <Plus className="w-4 h-4" /> Add a design
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <ul className="space-y-2">
+                    {placed.map(({ layer, loc }) => {
+                      const on = selected === layer.id;
+                      return (
+                        <li key={layer.id} className={`rounded-2xl border bg-white ${on ? "border-ink ring-1 ring-ink" : "border-line"}`}>
+                          <div className="flex items-center gap-3 p-2 pr-2.5">
+                            <button onClick={() => selectLayer(layer.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={srcOf(layer)} alt="" className="w-12 h-12 rounded-xl object-contain bg-paper p-1 shrink-0" />
+                              <span className="min-w-0">
+                                <span className="block text-sm font-semibold truncate">{nameOf(layer)}</span>
+                                <span
+                                  className={`inline-block mt-1 text-[11px] font-semibold rounded-full px-2 py-0.5 ${
+                                    loc ? "bg-paper text-ink" : "bg-red-50 text-red-600"
+                                  }`}
+                                >
+                                  {loc ? `${loc.label} · ${areaSize(loc)}` : "Area not offered — move it"}
+                                </span>
+                              </span>
+                            </button>
+                            <button onClick={() => removeLayer(layer.id)} className="p-2 rounded-full text-muted hover:text-red-600 hover:bg-red-50" aria-label="Remove design">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          {on && layer.type === "text" && (
+                            <div className="border-t border-line p-3 space-y-2.5">
+                              <textarea
+                                value={layer.text}
+                                onChange={(e) => updateLayer(layer.id, { text: e.target.value.slice(0, 80) })}
+                                rows={2}
+                                className="w-full rounded-xl border border-line bg-white px-3 py-2 font-semibold focus:outline-none focus:border-ink resize-none"
+                              />
+                              <div className="flex gap-1 flex-wrap">
+                                {TEXT_FONTS.map((f) => (
+                                  <button
+                                    key={f.id}
+                                    onClick={() => updateLayer(layer.id, { fontId: f.id })}
+                                    className={`px-3 py-1.5 rounded-full text-sm border ${
+                                      layer.fontId === f.id ? "bg-ink text-paper border-ink" : "bg-white border-line"
+                                    }`}
+                                    style={{ fontFamily: f.preview }}
+                                  >
+                                    {f.label}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex gap-1.5">
+                                {TEXT_COLORS.map((c) => (
+                                  <button
+                                    key={c}
+                                    onClick={() => updateLayer(layer.id, { color: c })}
+                                    aria-label={`Text colour ${c}`}
+                                    className={`w-7 h-7 rounded-full border border-black/15 ${layer.color === c ? "ring-2 ring-ink ring-offset-2" : ""}`}
+                                    style={{ backgroundColor: c }}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                  <p className="text-[11px] text-muted text-center">
+                    Tap a design to select it, then move, resize or change its print area on the position guide.
+                  </p>
+                  <button
+                    onClick={() => setPanel("add")}
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-ink/30 text-sm font-semibold py-3 rounded-2xl hover:border-ink"
+                  >
+                    <Plus className="w-4 h-4" /> Add another design
+                  </button>
+                </>
+              ))}
+
+            {panel === "shirt" && options}
+          </div>
+
+          {/* What you're buying, always visible */}
+          <details className="group shrink-0 border-t border-line bg-white">
+            <summary className="flex items-center gap-3 px-5 py-3.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="w-8 h-8 rounded-full border border-black/15 shrink-0" style={{ backgroundColor: color }} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold truncate">
+                  {g.label} · {colorLabel(color)} · {size}
+                  {qty > 1 && ` × ${qty}`}
+                </span>
+                <span className="block text-xs text-muted truncate">
+                  {areasUsed.length ? `${printed.length} design${printed.length === 1 ? "" : "s"} · ${areasUsed.map((l) => l.label).join(", ")}` : "No prints yet"}
+                </span>
+              </span>
+              <span className="text-right shrink-0">
+                <span className="block font-display font-bold">{formatPrice(unitPrice * qty)}</span>
+                <span className="text-[11px] text-muted inline-flex items-center gap-0.5">
+                  Details <ChevronDown className="w-3 h-3 transition-transform group-open:rotate-180" />
+                </span>
+              </span>
+            </summary>
+            <div className="px-5 pb-4 text-muted">{priceLines}</div>
+          </details>
         </aside>
 
         {/* 3D */}
@@ -946,86 +1074,210 @@ export default function CustomizeStudio({
             }
           />
           <p className="text-[11px] text-muted text-center mt-3">
-            Designs stay inside their dashed print area · drag to move · corners to resize · top handle to rotate
+            {sel ? "Drag to move · drag a corner to resize" : "Tap a design on the shirt to adjust it"}
           </p>
 
           {sel ? (
-            <div className="mt-5 pt-5 border-t border-line space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{nameOf(sel)}</p>
-                  <p className="text-xs text-muted">
-                    {selPiece
-                      ? `${selPiece.label} (${areaSize(selPiece)}) · ${describePlacement(selPiece, toPlacement(selPiece, sel.box), sel.aspect)}`
-                      : "We no longer print on this area — pick another one below."}
-                  </p>
-                  {selDesignPrice > 0 && <p className="text-xs text-muted">Design price +{formatPrice(selDesignPrice)}</p>}
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  <IconBtn
-                    label="Centre in this print area"
-                    onClick={() =>
-                      selPiece && updateLayer(sel.id, { box: { ...sel.box, cx: selPiece.rect.x + selPiece.rect.w / 2 } })
-                    }
-                  >
-                    <Crosshair className="w-4 h-4" />
-                  </IconBtn>
-                  <IconBtn label="Duplicate" onClick={() => duplicateLayer(sel)}>
-                    <Copy className="w-4 h-4" />
-                  </IconBtn>
-                  <IconBtn label="Remove" onClick={() => removeLayer(sel.id)} danger>
-                    <Trash2 className="w-4 h-4" />
-                  </IconBtn>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-muted mb-1.5">Print area</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {locations.map((l) => (
-                    <button
-                      key={l.id}
-                      onClick={() => moveToArea(sel, l)}
-                      className={`px-2.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
-                        sel.area === l.id ? "bg-ink text-paper border-ink" : "bg-white border-line hover:border-ink/40"
-                      }`}
-                    >
-                      {l.label} <span className="opacity-60 font-normal">{areaSize(l)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {selPiece && (
-                <Slider
-                  label={`Width · ${((sel.box.w / selPiece.rect.w) * selPiece.inches.w).toFixed(1)}″ (max ${selPiece.inches.w}″)`}
-                  value={sel.box.w}
-                  min={Math.min(8, selPiece.rect.w / 6)}
-                  max={fitInside({ ...sel.box, w: Infinity }, sel.aspect, selPiece.rect).w}
-                  step={0.5}
-                  onChange={(w) => updateLayer(sel.id, { box: { ...sel.box, w } })}
-                />
-              )}
-              <Slider
-                label={`Rotation · ${Math.round((sel.box.rotation * 180) / Math.PI)}°`}
-                icon={<RotateCw className="w-3.5 h-3.5" />}
-                value={sel.box.rotation}
-                min={-Math.PI}
-                max={Math.PI}
-                step={Math.PI / 180}
-                onChange={(rotation) => updateLayer(sel.id, { box: { ...sel.box, rotation } })}
-              />
-            </div>
+            <SelectedDesign
+              key={sel.id}
+              name={nameOf(sel)}
+              src={srcOf(sel)}
+              layer={sel}
+              area={selPiece}
+              locations={locations}
+              areaPrices={pricing.location}
+              designPrice={selDesignPrice}
+              onArea={(l) => moveToArea(sel, l)}
+              onBox={(box) => updateLayer(sel.id, { box })}
+              onDuplicate={() => duplicateLayer(sel)}
+              onRemove={() => removeLayer(sel.id)}
+            />
           ) : (
-            <p className="mt-5 pt-5 border-t border-line text-sm text-muted text-center">
-              {layers.length ? "Select a design on the guide to adjust it." : "Add a design from the left panel to get started."}
-            </p>
+            <div className="mt-5 pt-5 border-t border-line">
+              <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
+              <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
+            </div>
           )}
-
-          <div className="mt-5 pt-5 border-t border-line">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
-            <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
-          </div>
         </aside>
       </div>
+    </div>
+  );
+}
+
+/** Controls for the design selected on the position guide. */
+function SelectedDesign({
+  name,
+  src,
+  layer,
+  area,
+  locations,
+  areaPrices,
+  designPrice,
+  onArea,
+  onBox,
+  onDuplicate,
+  onRemove,
+}: {
+  name: string;
+  src: string;
+  layer: Layer;
+  area?: PrintLocation;
+  locations: PrintLocation[];
+  areaPrices: Record<string, number>;
+  designPrice: number;
+  onArea: (l: PrintLocation) => void;
+  onBox: (b: GuideBox) => void;
+  onDuplicate: () => void;
+  onRemove: () => void;
+}) {
+  const b = layer.box;
+  const maxW = area ? fitInside({ ...b, w: Infinity }, layer.aspect, area.rect).w : b.w;
+  const minW = area ? Math.min(maxW, area.rect.w / 6) : b.w;
+  const perInch = area ? area.rect.w / area.inches.w : 1;
+  const wIn = b.w / perInch;
+  const hIn = wIn / (layer.aspect || 1);
+  const offIn = area ? (b.cx - (area.rect.x + area.rect.w / 2)) / perInch : 0;
+  const where = Math.abs(offIn) < 0.15 ? "centred" : `${Math.abs(offIn).toFixed(1)}″ ${offIn > 0 ? "right" : "left"} of centre`;
+  const deg = Math.round((b.rotation * 180) / Math.PI);
+  const rotate = (d: number) => {
+    const r = b.rotation + (d * Math.PI) / 180;
+    onBox({ ...b, rotation: Math.abs(r) < 1e-6 ? 0 : Math.atan2(Math.sin(r), Math.cos(r)) });
+  };
+  const sizes: [string, number][] = [
+    ["Small", 0.5],
+    ["Medium", 0.75],
+    ["Fill", 1],
+  ];
+
+  return (
+    <div className="mt-5 pt-5 border-t border-line space-y-5">
+      {/* What's selected, in one line */}
+      <div className="flex items-center gap-3">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt="" className="w-12 h-12 rounded-xl object-contain bg-paper p-1 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold truncate">{name}</p>
+          <p className="text-xs text-muted">
+            {area ? `${area.label} · ${wIn.toFixed(1)}″ × ${hIn.toFixed(1)}″ · ${where}` : "Pick a print area below"}
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">
+        {(
+          [
+            ["Centre", Crosshair, () => area && onBox({ ...b, cx: area.rect.x + area.rect.w / 2 }), false],
+            ["Duplicate", Copy, onDuplicate, false],
+            ["Remove", Trash2, onRemove, true],
+          ] as const
+        ).map(([label, Icon, run, danger]) => (
+          <button
+            key={label}
+            onClick={run}
+            className={`flex items-center justify-center gap-1.5 rounded-xl border border-line py-2 text-xs font-semibold transition-colors ${
+              danger ? "text-red-600 hover:bg-red-50 hover:border-red-200" : "hover:border-ink"
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" /> {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Print area — numbers match the badges on the guide */}
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2">Print area</p>
+        <div className="grid grid-cols-2 gap-1.5">
+          {locations.map((l) => {
+            const on = layer.area === l.id;
+            return (
+              <button
+                key={l.id}
+                onClick={() => onArea(l)}
+                aria-pressed={on}
+                className={`flex items-center gap-2 rounded-xl border px-2.5 py-2 text-left transition-colors ${
+                  on ? "bg-ink text-paper border-ink" : "border-line hover:border-ink/40"
+                }`}
+              >
+                <span
+                  className={`w-5 h-5 shrink-0 rounded-full text-[11px] font-black flex items-center justify-center ${
+                    on ? "bg-lime text-ink" : "bg-[#c99700] text-white"
+                  }`}
+                >
+                  {PRINT_AREA_NUMBER(l)}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-xs font-semibold truncate">{l.label}</span>
+                  <span className={`block text-[11px] ${on ? "text-paper/60" : "text-muted"}`}>
+                    {areaSize(l)} · +{formatPrice(areaPrices[l.id] ?? 0)}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {area && (
+        <div>
+          <div className="flex items-baseline justify-between mb-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted">Size</p>
+            <p className="text-xs text-muted">
+              {wIn.toFixed(1)}″ wide · max {(maxW / perInch).toFixed(1)}″
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5 mb-3">
+            {sizes.map(([label, f]) => {
+              const on = Math.abs(b.w - maxW * f) < 1;
+              return (
+                <button
+                  key={label}
+                  onClick={() => onBox({ ...b, w: Math.max(minW, maxW * f) })}
+                  className={`rounded-xl border py-2 text-xs font-semibold transition-colors ${
+                    on ? "bg-ink text-paper border-ink" : "border-line hover:border-ink/40"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <input
+            type="range"
+            min={minW}
+            max={maxW}
+            step={0.5}
+            value={Math.min(b.w, maxW)}
+            onChange={(e) => onBox({ ...b, w: parseFloat(e.target.value) })}
+            aria-label="Design width"
+            className="w-full accent-ink"
+          />
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-bold uppercase tracking-widest text-muted">Rotate</p>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => rotate(-15)} aria-label="Rotate left 15°" className="w-9 h-9 rounded-xl border border-line hover:border-ink flex items-center justify-center">
+            <RotateCw className="w-4 h-4 -scale-x-100" />
+          </button>
+          <button
+            onClick={() => rotate(-deg)}
+            className={`min-w-14 h-9 px-2 rounded-xl border text-xs font-semibold ${deg ? "border-line hover:border-ink" : "border-transparent text-muted"}`}
+            title="Reset rotation"
+          >
+            {deg}°
+          </button>
+          <button onClick={() => rotate(15)} aria-label="Rotate right 15°" className="w-9 h-9 rounded-xl border border-line hover:border-ink flex items-center justify-center">
+            <RotateCw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {(designPrice > 0 || area) && (
+        <p className="text-xs text-muted rounded-xl bg-paper px-3 py-2.5">
+          {area && <>{area.label} print +{formatPrice(areaPrices[area.id] ?? 0)} (once per shirt)</>}
+          {designPrice > 0 && <> · design +{formatPrice(designPrice)}</>}
+        </p>
+      )}
     </div>
   );
 }
@@ -1036,65 +1288,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">{title}</h2>
       {children}
     </section>
-  );
-}
-
-function IconBtn({
-  label,
-  onClick,
-  danger,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      className={`p-2 rounded-lg border border-line ${danger ? "text-red-600 hover:bg-red-50" : "hover:bg-paper"}`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-  icon,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-  icon?: React.ReactNode;
-}) {
-  return (
-    <label className="block text-xs text-muted">
-      <span className="font-medium flex items-center gap-1.5 mb-1">
-        {icon}
-        {label}
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full accent-ink"
-      />
-    </label>
   );
 }
 
