@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { revalidateTag, unstable_cache } from "next/cache";
 import { ORDER_STATUSES, type Category, type Design, type Order, type OrderStatus, type Settings } from "@/lib/types";
 import { resolvePricing } from "@/lib/garments";
 import { SEED_CATEGORIES, SEED_DESIGNS } from "@/lib/server/seed";
@@ -476,10 +477,55 @@ const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 export const storeDriver = supabaseUrl && serviceKey ? "supabase" : "local";
 
-export const store: Store =
+const backend: Store =
   storeDriver === "supabase"
     ? new SupabaseStore(createClient(supabaseUrl!, serviceKey!, { auth: { persistSession: false } }))
     : new LocalStore();
+
+// ── Catalogue cache ─────────────────────────────────────────────────────────
+// Categories, designs and prices are read on almost every page but only
+// change when the admin saves something, so they're cached instead of
+// hitting the database on every click. Every write through `store` clears
+// the cache straight away. Edits made directly in the Supabase dashboard
+// show up within 5 minutes. Orders are never cached.
+const CATALOG_TAG = "catalog";
+
+function withCatalogCache(s: Store): Store {
+  const cached = <T>(key: string, fn: () => Promise<T>) =>
+    unstable_cache(fn, ["store", storeDriver, key], { tags: [CATALOG_TAG], revalidate: 300 });
+  const changes =
+    <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
+    async (...args: A) => {
+      const result = await fn(...args);
+      revalidateTag(CATALOG_TAG, { expire: 0 });
+      return result;
+    };
+
+  return {
+    listCategories: cached("categories", () => s.listCategories()),
+    createCategory: changes((input) => s.createCategory(input)),
+    updateCategory: changes((id, patch) => s.updateCategory(id, patch)),
+    deleteCategory: changes((id) => s.deleteCategory(id)),
+
+    listDesigns: cached("designs", () => s.listDesigns()),
+    getDesign: (id) => s.getDesign(id),
+    createDesign: changes((input) => s.createDesign(input)),
+    updateDesign: changes((id, patch) => s.updateDesign(id, patch)),
+    deleteDesign: changes((id) => s.deleteDesign(id)),
+
+    listOrders: () => s.listOrders(),
+    createOrder: (input) => s.createOrder(input),
+    updateOrder: (id, patch) => s.updateOrder(id, patch),
+
+    getSettings: cached("settings", () => s.getSettings()),
+    updateSettings: changes((patch) => s.updateSettings(patch)),
+
+    saveUpload: (data, ext, folder) => s.saveUpload(data, ext, folder),
+    deleteUpload: (url) => s.deleteUpload(url),
+  };
+}
+
+export const store: Store = withCatalogCache(backend);
 
 /** Current prices (admin settings merged over the defaults in code) */
 export async function getPricing() {
