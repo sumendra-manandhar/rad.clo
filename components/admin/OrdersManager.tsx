@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Phone, Mail, MapPin, Search } from "lucide-react";
 import { ORDER_STATUSES, type Order, type OrderStatus } from "@/lib/types";
 import { formatPrice } from "@/lib/garments";
-import { describePlacement, getLocation, toGuideBox } from "@/lib/print-locations";
+import { areaSize, describePlacement, getLocation, placementFrame, toGuideBox } from "@/lib/print-locations";
 import PositionGuide from "@/components/PositionGuide";
 import { PageHeader, StatusBadge, inputCls } from "@/components/admin/ui";
 
@@ -122,7 +122,8 @@ export default function OrdersManager({
                                   readOnly
                                   color={it.color}
                                   layers={it.prints.flatMap((p, i) => {
-                                    const loc = getLocation(p.location);
+                                    // New orders: relative to the print area; older ones: the whole piece.
+                                    const loc = placementFrame(p);
                                     return loc && p.placement
                                       ? [{ id: String(i), src: p.artworkUrl, aspect: p.aspect || 1, box: toGuideBox(loc, p.placement) }]
                                       : [];
@@ -138,16 +139,20 @@ export default function OrdersManager({
                               <ol className="space-y-2">
                                 {it.prints.map((p, i) => {
                                   const loc = getLocation(p.location);
+                                  const frame = placementFrame(p);
                                   return (
                                     <li key={i} className="flex gap-3 rounded-xl bg-paper p-2.5">
                                       {/* eslint-disable-next-line @next/next/no-img-element */}
                                       <img src={p.artworkUrl} alt="" className="w-14 h-14 rounded-lg object-contain bg-white p-1 shrink-0" />
                                       <div className="min-w-0 flex-1">
-                                        <p className="text-xs font-semibold">{loc?.label ?? p.location}</p>
+                                        <p className="text-xs font-semibold">
+                                          {loc?.label ?? p.location}
+                                          {loc && p.v === 2 && <span className="font-normal text-muted"> · {areaSize(loc)} area</span>}
+                                        </p>
                                         <p className="text-xs truncate">{p.designName}</p>
-                                        {loc && p.placement && (
+                                        {frame && p.placement && (
                                           <p className="text-[11px] text-muted mt-0.5">
-                                            {describePlacement(loc, p.placement, p.aspect || 1)}
+                                            {describePlacement(frame, p.placement, p.aspect || 1)}
                                           </p>
                                         )}
                                         <a

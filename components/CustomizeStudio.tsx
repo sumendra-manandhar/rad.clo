@@ -33,12 +33,14 @@ import {
   type Pricing,
 } from "@/lib/garments";
 import {
+  AREA_FOR_VIEW,
   FIXED_PRINT_SPEC,
-  fixedPrintFor,
-  placementFromTop,
+  areaSize,
   describePlacement,
+  fitInside,
+  fixedPrintFor,
   getLocation,
-  pieceAt,
+  newPlacement,
   toGuideBox,
   toPlacement,
   type GuideBox,
@@ -48,6 +50,7 @@ import {
 import { useCart } from "@/lib/cart-context";
 import { SizeChartButton } from "@/components/SizeChart";
 import PositionGuide from "@/components/PositionGuide";
+import { PrintAreasLegend } from "@/components/PrintAreas";
 
 const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   ssr: false,
@@ -63,8 +66,14 @@ type Art =
   | { type: "upload"; src: string; name: string }
   | { type: "text"; src: string; text: string; fontId: string; color: string; rendered: string };
 
-/** A design on the garment: artwork + its box on the position guide. */
-type Layer = Art & { id: string; box: GuideBox; aspect: number };
+/** A design on the garment: artwork, the print area it's in and its box on the position guide. */
+type Layer = Art & { id: string; area: string; box: GuideBox; aspect: number };
+
+/** Keeps a layer inside its print area (after its size, shape or rotation changes). */
+function refit<T extends Layer>(l: T): T {
+  const area = getLocation(l.area);
+  return area ? { ...l, box: fitInside(l.box, l.aspect, area.rect) } : l;
+}
 
 const TEXT_FONTS = [
   { id: "display", label: "Display", css: () => cssVarFont("--font-bricolage"), weight: 800, preview: "var(--font-bricolage)" },
@@ -74,15 +83,6 @@ const TEXT_FONTS = [
   { id: "mono", label: "Mono", css: () => "'Courier New', monospace", weight: 700, preview: "'Courier New', monospace" },
 ];
 const TEXT_COLORS = ["#121212", "#ffffff", "#ff5b1f", "#d4ff3a", "#1E334D", "#c1121f", "#f2c14e"];
-
-/** Default spot for a new design: front/back like store prints (top edge 5.5″ down), sleeves centred. */
-function newPlacement(loc: PrintLocation, aspect: number): PrintPlacement {
-  if (loc.view === "front" || loc.view === "back") {
-    return placementFromTop(loc, FIXED_PRINT_SPEC.widthIn, aspect, FIXED_PRINT_SPEC.topIn);
-  }
-  return { x: 0.5, y: 0.35, w: 0.45, rotation: 0 };
-}
-const PIECE_FOR_VIEW: Record<PrintView, string> = { front: "front", back: "back", left: "left-sleeve", right: "right-sleeve" };
 
 function cssVarFont(name: string) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -190,6 +190,7 @@ export default function CustomizeStudio({
             id: newId(),
             type: "gallery",
             designId: initialDesign.id,
+            area: fixedPrint.location,
             aspect: 1,
             box: toGuideBox(getLocation(fixedPrint.location)!, fixedPrint.placement),
           },
@@ -216,11 +217,11 @@ export default function CustomizeStudio({
       setLayers((prev) =>
         prev.map((l) => {
           if (l.type !== "gallery" || l.designId !== initialDesign.id) return l;
-          if (l.box !== initialBox.current) return { ...l, aspect };
+          if (l.box !== initialBox.current) return refit({ ...l, aspect });
           const spot = fixedPrintFor(locations.map((x) => x.id), aspect);
           const box = toGuideBox(getLocation(spot.location)!, spot.placement);
           initialBox.current = box;
-          return { ...l, aspect, box };
+          return { ...l, aspect, area: spot.location, box };
         })
       );
     };
@@ -256,7 +257,8 @@ export default function CustomizeStudio({
   const placed = useMemo(
     () =>
       layers.map((layer) => {
-        const loc = pieceAt(layer.box.cx, layer.box.cy, locations);
+        // Only areas the admin still offers print.
+        const loc = locations.find((l) => l.id === layer.area);
         return { layer, loc, placement: loc ? toPlacement(loc, layer.box) : null };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -291,21 +293,29 @@ export default function CustomizeStudio({
     return () => clearTimeout(t);
   }, []);
   const waitingForPrint = !shapeKnown || (!!initialDesign && layers.length > 0 && viewerPrints.length === 0);
-  const guideLayers = layers.map((l) => ({ id: l.id, src: srcOf(l), box: l.box, aspect: l.aspect }));
+  const guideLayers = layers.map((l) => ({ id: l.id, src: srcOf(l), box: l.box, aspect: l.aspect, area: l.area }));
 
   const sel = layers.find((l) => l.id === selected) ?? null;
-  const selPiece = sel ? pieceAt(sel.box.cx, sel.box.cy, locations) : undefined;
+  const selPiece = sel ? locations.find((l) => l.id === sel.area) : undefined;
 
   const focus = (v: PrintView) => setView((cur) => ({ name: v, n: cur.n + 1 }));
 
+  // Every change keeps the design inside its print area.
   const updateLayer = (id: string, patch: Partial<Layer>) =>
-    setLayers((prev) => prev.map((l) => (l.id === id ? ({ ...l, ...patch } as Layer) : l)));
+    setLayers((prev) => prev.map((l) => (l.id === id ? refit({ ...l, ...patch } as Layer) : l)));
 
-  /** Adds a design to the piece the 3D view is facing. */
+  /** Moves a design to another print area, sized to fit it. */
+  const moveToArea = (l: Layer, loc: PrintLocation) => {
+    if (l.area === loc.id) return;
+    updateLayer(l.id, { area: loc.id, box: toGuideBox(loc, newPlacement(loc, l.aspect)) });
+    if (loc.view !== view.name) focus(loc.view);
+  };
+
+  /** Adds a design to the main print area of the side the 3D view is facing. */
   const addLayer = (art: Art, aspect = 1) => {
-    // Add to the piece being viewed, or the first enabled piece if that one is hidden.
-    const loc = locations.find((l) => l.id === PIECE_FOR_VIEW[view.name]) ?? locations[0];
-    const layer = { ...art, id: newId(), aspect, box: toGuideBox(loc, newPlacement(loc, aspect)) } as Layer;
+    // That side's main area, or the first enabled area if it's hidden.
+    const loc = locations.find((l) => l.id === AREA_FOR_VIEW[view.name]) ?? locations[0];
+    const layer = { ...art, id: newId(), area: loc.id, aspect, box: toGuideBox(loc, newPlacement(loc, aspect)) } as Layer;
     setLayers((prev) => [...prev, layer]);
     setSelected(layer.id);
   };
@@ -316,7 +326,8 @@ export default function CustomizeStudio({
   };
 
   const duplicateLayer = (l: Layer) => {
-    const copy = { ...l, id: newId(), box: { ...l.box, cx: l.box.cx + 30, cy: l.box.cy + 30 } } as Layer;
+    const nudge = (getLocation(l.area)?.rect.w ?? 200) * 0.08;
+    const copy = refit({ ...l, id: newId(), box: { ...l.box, cx: l.box.cx + nudge, cy: l.box.cy + nudge } } as Layer);
     setLayers((prev) => [...prev, copy]);
     setSelected(copy.id);
   };
@@ -324,7 +335,7 @@ export default function CustomizeStudio({
   const selectLayer = (id: string | null) => {
     setSelected(id);
     const l = layers.find((x) => x.id === id);
-    const loc = l && pieceAt(l.box.cx, l.box.cy, locations);
+    const loc = l && getLocation(l.area);
     if (loc && loc.view !== view.name) focus(loc.view);
     if (l?.type === "text") setTab("text");
   };
@@ -342,7 +353,7 @@ export default function CustomizeStudio({
         prev.map((l) => {
           const r = results.get(l.id);
           if (!r || l.type !== "text" || textKey(l) !== r.key) return l;
-          return r.out ? { ...l, src: r.out.src, aspect: r.out.aspect, rendered: r.key } : { ...l, rendered: r.key };
+          return r.out ? refit({ ...l, src: r.out.src, aspect: r.out.aspect, rendered: r.key }) : { ...l, rendered: r.key };
         })
       );
     }, 200);
@@ -432,6 +443,7 @@ export default function CustomizeStudio({
           designName: nameOf(layer),
           artworkUrl,
           price: areaFee + designPriceOf(layer),
+          v: 2,
         });
       }
       let previewUrl: string | undefined;
@@ -643,7 +655,7 @@ export default function CustomizeStudio({
                 <p>
                   <span className="font-semibold">Print:</span>{" "}
                   {fixedSpot.location === "front" || fixedSpot.location === "back"
-                    ? `${fixedSpot.location}, ${(fixedSpot.placement.w * (getLocation(fixedSpot.location)?.inches.w ?? 21)).toFixed(1)}″ wide, centred, top edge ${FIXED_PRINT_SPEC.topIn}″ below the shoulder line.`
+                    ? `${getLocation(fixedSpot.location)?.label.toLowerCase()} (${areaSize(getLocation(fixedSpot.location)!)} area), ${(fixedSpot.placement.w * (getLocation(fixedSpot.location)?.inches.w ?? 11)).toFixed(1)}″ wide, centred, top edge ${FIXED_PRINT_SPEC.topIn}″ below the shoulder line.`
                     : `${getLocation(fixedSpot.location)?.label.toLowerCase()}, centred.`}
                 </p>
               ) : printed.length ? (
@@ -665,6 +677,23 @@ export default function CustomizeStudio({
                 {single ? "Customize — move it, resize it, add text or more prints" : "Open the editor"}
               </button>
             </div>
+
+            <details className="group rounded-2xl bg-white border border-line">
+              <summary className="flex items-center justify-between gap-3 cursor-pointer list-none p-4 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+                Where can I print? Print areas & sizes
+                <Plus className="w-4 h-4 shrink-0 transition-transform group-open:rotate-45" />
+              </summary>
+              <div className="px-4 pb-4 space-y-4">
+                <div className="rounded-xl bg-paper p-3">
+                  <PositionGuide readOnly locations={locations} color={color} layers={guideLayers} />
+                </div>
+                <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
+                <p className="text-xs text-muted">
+                  Sizes are the largest print for each area and fit adult sizes S–2XL. Each area you use is charged
+                  once per shirt.
+                </p>
+              </div>
+            </details>
 
             <div className="space-y-5">{options}</div>
 
@@ -704,7 +733,7 @@ export default function CustomizeStudio({
         <div className="flex items-center gap-3">
           {offGarment > 0 && (
             <span className="hidden sm:inline-flex items-center gap-1 text-xs text-amber-300">
-              <AlertTriangle className="w-3.5 h-3.5" /> {offGarment} off the garment
+              <AlertTriangle className="w-3.5 h-3.5" /> {offGarment} in an area we no longer print
             </span>
           )}
           {addButton}
@@ -877,7 +906,7 @@ export default function CustomizeStudio({
                         <span className="min-w-0">
                           <span className="block text-xs font-semibold truncate">{nameOf(layer)}</span>
                           <span className={`block text-[11px] ${loc ? "text-muted" : "text-red-600"}`}>
-                            {loc ? loc.label : "Off the garment — won't print"}
+                            {loc ? `${loc.label} · ${areaSize(loc)}` : "This print area isn't offered — move it"}
                           </span>
                         </span>
                       </button>
@@ -906,17 +935,18 @@ export default function CustomizeStudio({
             locations={locations}
             color={color}
             layers={guideLayers}
+            activeArea={selPiece?.id}
             selected={selected}
             onSelect={selectLayer}
             onChange={(id, box) => updateLayer(id, { box })}
             onAspect={(id, aspect) =>
               setLayers((prev) =>
-                prev.map((l) => (l.id === id && Math.abs(l.aspect - aspect) > 0.001 ? ({ ...l, aspect } as Layer) : l))
+                prev.map((l) => (l.id === id && Math.abs(l.aspect - aspect) > 0.001 ? refit({ ...l, aspect } as Layer) : l))
               )
             }
           />
           <p className="text-[11px] text-muted text-center mt-3">
-            Drag to move · corners to resize · top handle to rotate · Delete to remove
+            Designs stay inside their dashed print area · drag to move · corners to resize · top handle to rotate
           </p>
 
           {sel ? (
@@ -926,14 +956,14 @@ export default function CustomizeStudio({
                   <p className="text-sm font-semibold truncate">{nameOf(sel)}</p>
                   <p className="text-xs text-muted">
                     {selPiece
-                      ? `${selPiece.label} · ${describePlacement(selPiece, toPlacement(selPiece, sel.box), sel.aspect)}`
-                      : "Move it onto the front, back or a sleeve to print it."}
+                      ? `${selPiece.label} (${areaSize(selPiece)}) · ${describePlacement(selPiece, toPlacement(selPiece, sel.box), sel.aspect)}`
+                      : "We no longer print on this area — pick another one below."}
                   </p>
                   {selDesignPrice > 0 && <p className="text-xs text-muted">Design price +{formatPrice(selDesignPrice)}</p>}
                 </div>
                 <div className="flex gap-1 shrink-0">
                   <IconBtn
-                    label="Centre on this piece"
+                    label="Centre in this print area"
                     onClick={() =>
                       selPiece && updateLayer(sel.id, { box: { ...sel.box, cx: selPiece.rect.x + selPiece.rect.w / 2 } })
                     }
@@ -948,13 +978,29 @@ export default function CustomizeStudio({
                   </IconBtn>
                 </div>
               </div>
+              <div>
+                <p className="text-xs font-medium text-muted mb-1.5">Print area</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {locations.map((l) => (
+                    <button
+                      key={l.id}
+                      onClick={() => moveToArea(sel, l)}
+                      className={`px-2.5 py-1.5 rounded-full text-xs font-semibold border transition-colors ${
+                        sel.area === l.id ? "bg-ink text-paper border-ink" : "bg-white border-line hover:border-ink/40"
+                      }`}
+                    >
+                      {l.label} <span className="opacity-60 font-normal">{areaSize(l)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               {selPiece && (
                 <Slider
-                  label={`Width · ${((sel.box.w / selPiece.rect.w) * selPiece.inches.w).toFixed(1)}″`}
+                  label={`Width · ${((sel.box.w / selPiece.rect.w) * selPiece.inches.w).toFixed(1)}″ (max ${selPiece.inches.w}″)`}
                   value={sel.box.w}
-                  min={18}
-                  max={selPiece.rect.w}
-                  step={1}
+                  min={Math.min(8, selPiece.rect.w / 6)}
+                  max={fitInside({ ...sel.box, w: Infinity }, sel.aspect, selPiece.rect).w}
+                  step={0.5}
                   onChange={(w) => updateLayer(sel.id, { box: { ...sel.box, w } })}
                 />
               )}
@@ -974,13 +1020,9 @@ export default function CustomizeStudio({
             </p>
           )}
 
-          <div className="mt-5 pt-5 border-t border-line grid grid-cols-2 gap-2 text-xs">
-            {locations.map((l) => (
-              <div key={l.id} className={`rounded-xl px-3 py-2 ${areasUsed.includes(l) ? "bg-lime" : "bg-paper"}`}>
-                <p className="font-semibold">{l.label}</p>
-                <p className="opacity-70">+{formatPrice(pricing.location[l.id])}</p>
-              </div>
-            ))}
+          <div className="mt-5 pt-5 border-t border-line">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
+            <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
           </div>
         </aside>
       </div>

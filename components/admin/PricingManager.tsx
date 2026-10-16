@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Eye, EyeOff, ImagePlus, Loader2, RotateCcw } from "lucide-react";
 import { GARMENTS, formatPrice, type Pricing } from "@/lib/garments";
-import { GUIDE, PRINT_LOCATIONS, type PrintLocation } from "@/lib/print-locations";
+import { GUIDE, PANELS, PRINT_LOCATIONS, areaSize, type PrintLocation } from "@/lib/print-locations";
 import { PageHeader, inputCls } from "@/components/admin/ui";
 
 type GarmentRow = { label: string; fabric: string; image: string; price: string; visible: boolean };
@@ -140,7 +140,9 @@ export default function PricingManager({ pricing }: { pricing: Pricing }) {
                 <AreaDiagram loc={l} on={row.visible} />
                 <div className="flex items-center justify-between gap-2 mt-3">
                   <div>
-                    <p className="font-semibold text-sm">{l.label}</p>
+                    <p className="font-semibold text-sm">
+                      {l.label} <span className="font-normal text-muted">· {areaSize(l)}</span>
+                    </p>
                     <p className="text-xs text-muted">
                       {l.inches.w}″ × {l.inches.h}″ piece
                     </p>
@@ -299,20 +301,24 @@ function PriceInput({ value, onChange }: { value: string; onChange: (v: string) 
   );
 }
 
-/** The flat pattern with this area highlighted. */
+/** The flat pattern with this area's box highlighted. */
 function AreaDiagram({ loc, on }: { loc: PrintLocation; on: boolean }) {
+  const { x, y, w, h } = loc.rect;
   return (
     <svg viewBox={`0 0 ${GUIDE.w} ${GUIDE.h}`} className="w-full aspect-square bg-paper rounded-xl" aria-hidden>
-      {PRINT_LOCATIONS.map((l) => (
-        <path
-          key={l.id}
-          d={l.outline}
-          fill={l.id === loc.id ? (on ? "#d4ff3a" : "#cbd5e1") : "#ffffff"}
-          stroke="#11111133"
-          strokeWidth="5"
-          strokeLinejoin="round"
-        />
+      {PANELS.map((p) => (
+        <path key={p.id} d={p.outline} fill="#ffffff" stroke="#11111133" strokeWidth="5" strokeLinejoin="round" />
       ))}
+      <rect
+        x={x}
+        y={y}
+        width={w}
+        height={h}
+        fill={on ? "#d4ff3a" : "#cbd5e1"}
+        stroke="#111111"
+        strokeWidth="5"
+        strokeDasharray="14 9"
+      />
     </svg>
   );
 }

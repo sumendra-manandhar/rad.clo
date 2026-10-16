@@ -1,14 +1,25 @@
 "use client";
 
 import { useRef } from "react";
-import { GUIDE, PRINT_LOCATIONS, pieceAt, type GuideBox, type PrintLocation } from "@/lib/print-locations";
+import {
+  GUIDE,
+  PANELS,
+  PRINT_LOCATIONS,
+  fitInside,
+  isSmallArea,
+  type GuideBox,
+  type PrintLocation,
+} from "@/lib/print-locations";
 
-export type GuideLayer = { id: string; src: string; box: GuideBox; aspect: number };
+/** `area` is the print-area id the design is locked inside (omitted for old orders). */
+export type GuideLayer = { id: string; src: string; box: GuideBox; aspect: number; area?: string };
 
 type Props = {
   color: string;
-  /** Pieces to draw and print on (hidden print areas are left out) */
+  /** Print areas to draw and print on (hidden areas are left out) */
   locations?: PrintLocation[];
+  /** Area to highlight (e.g. the selected design's) */
+  activeArea?: string | null;
   layers: GuideLayer[];
   selected?: string | null;
   onSelect?: (id: string | null) => void;
@@ -24,6 +35,7 @@ const pct = (v: number, total: number) => `${(v / total) * 100}%`;
 
 type Drag = {
   id: string;
+  layer: GuideLayer;
   mode: "move" | "scale" | "rotate";
   px: number;
   py: number;
@@ -36,11 +48,11 @@ type Drag = {
 };
 
 /**
- * The flat garment pattern (front, back, sleeves). Designs can be dragged
- * anywhere; each prints on the piece under its centre. Selected designs get
- * corner handles to resize and a top handle to rotate. Keyboard: arrows
- * nudge (Shift = bigger), +/- resize, [ ] rotate, Delete is handled by the
- * parent via onSelect/onChange.
+ * The flat garment pattern (front, back, sleeves) with the print areas drawn
+ * as numbered dashed boxes. Each design stays inside its area's box while it
+ * is dragged, resized or rotated. Selected designs get corner handles to
+ * resize and a top handle to rotate. Keyboard: arrows nudge (Shift = bigger),
+ * +/- resize, [ ] rotate; Delete is handled by the parent.
  */
 export default function PositionGuide({
   color,
@@ -51,10 +63,22 @@ export default function PositionGuide({
   onChange,
   onAspect,
   readOnly,
+  activeArea,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const dark = DARK.includes(color);
+  const zone = dark ? "#ffd84a" : "#c99700";
+  const panels = PANELS.filter((p) => locations.some((l) => l.panel === p.id));
+  // Crop off the sleeve row when no sleeve areas are offered.
+  const H = panels.some((p) => p.view === "left" || p.view === "right") ? GUIDE.h : 626;
+  const used = new Set(layers.map((l) => l.area));
+
+  // Keeps a design inside its print area (or on the canvas for old orders).
+  const constrain = (layer: GuideLayer, b: GuideBox) => {
+    const area = layer.area ? PRINT_LOCATIONS.find((l) => l.id === layer.area) : undefined;
+    return area ? fitInside(b, layer.aspect, area.rect) : clampBox(b);
+  };
 
   const begin = (layer: GuideLayer, mode: Drag["mode"]) => (e: React.PointerEvent) => {
     if (readOnly || !rootRef.current) return;
@@ -68,6 +92,7 @@ export default function PositionGuide({
     const cy = rect.top + layer.box.cy / unit;
     drag.current = {
       id: layer.id,
+      layer,
       mode,
       px: e.clientX,
       py: e.clientY,
@@ -85,14 +110,14 @@ export default function PositionGuide({
     if (!d || !onChange) return;
     const s = d.start;
     if (d.mode === "move") {
-      onChange(d.id, clampBox({ ...s, cx: s.cx + (e.clientX - d.px) * d.unit, cy: s.cy + (e.clientY - d.py) * d.unit }));
+      onChange(d.id, constrain(d.layer, { ...s, cx: s.cx + (e.clientX - d.px) * d.unit, cy: s.cy + (e.clientY - d.py) * d.unit }));
     } else if (d.mode === "scale") {
-      onChange(d.id, clampBox({ ...s, w: (s.w * Math.hypot(e.clientX - d.cx, e.clientY - d.cy)) / d.dist }));
+      onChange(d.id, constrain(d.layer, { ...s, w: (s.w * Math.hypot(e.clientX - d.cx, e.clientY - d.cy)) / d.dist }));
     } else {
       let r = s.rotation + Math.atan2(e.clientY - d.cy, e.clientX - d.cx) - d.angle;
       const quarter = Math.round(r / (Math.PI / 2)) * (Math.PI / 2);
       if (Math.abs(r - quarter) < SNAP) r = quarter;
-      onChange(d.id, { ...s, rotation: Math.atan2(Math.sin(r), Math.cos(r)) });
+      onChange(d.id, constrain(d.layer, { ...s, rotation: Math.atan2(Math.sin(r), Math.cos(r)) }));
     }
   };
 
@@ -115,7 +140,7 @@ export default function PositionGuide({
     };
     if (map[e.key]) {
       e.preventDefault();
-      onChange(layer.id, clampBox({ ...b, ...map[e.key] }));
+      onChange(layer.id, constrain(layer, { ...b, ...map[e.key] }));
     }
   };
 
@@ -123,33 +148,69 @@ export default function PositionGuide({
     <div
       ref={rootRef}
       className={`relative w-full select-none ${readOnly ? "" : "touch-none"}`}
-      style={{ aspectRatio: `${GUIDE.w} / ${GUIDE.h}` }}
+      style={{ aspectRatio: `${GUIDE.w} / ${H}` }}
       onPointerDown={() => !readOnly && onSelect?.(null)}
     >
-      <svg viewBox={`0 0 ${GUIDE.w} ${GUIDE.h}`} className="absolute inset-0 w-full h-full" aria-hidden>
-        {locations.map((loc) => (
-          <g key={loc.id}>
-            <path d={loc.outline} fill={color} stroke={dark ? "#ffffff30" : "#00000022"} strokeWidth="4" strokeLinejoin="round" />
-            {loc.neck && <path d={loc.neck} fill="none" stroke={dark ? "#ffffff30" : "#00000026"} strokeWidth="5" />}
+      <svg viewBox={`0 0 ${GUIDE.w} ${H}`} className="absolute inset-0 w-full h-full" aria-hidden>
+        {panels.map((p) => (
+          <g key={p.id}>
+            <path d={p.outline} fill={color} stroke={dark ? "#ffffff30" : "#00000022"} strokeWidth="4" strokeLinejoin="round" />
+            {p.neck && <path d={p.neck} fill="none" stroke={dark ? "#ffffff30" : "#00000026"} strokeWidth="5" />}
             <text
-              x={loc.rect.x + loc.rect.w / 2}
-              y={loc.rect.y + loc.rect.h / 2}
+              x={p.rect.x + p.rect.w / 2}
+              y={p.view === "front" || p.view === "back" ? p.rect.y + p.rect.h - 22 : p.rect.y + p.rect.h - 18}
               textAnchor="middle"
-              dominantBaseline="middle"
-              fontSize={loc.view === "front" || loc.view === "back" ? 44 : 32}
+              fontSize="26"
               fontWeight="800"
-              letterSpacing="2"
-              fill={dark ? "#ffffff22" : "#00000018"}
+              letterSpacing="3"
+              fill={dark ? "#ffffff30" : "#00000024"}
             >
-              {loc.label.toUpperCase()}
+              {p.label.toUpperCase()}
             </text>
           </g>
         ))}
+
+        {/* Print areas: numbered dashed boxes, matching PrintAreasLegend */}
+        {locations.map((loc) => {
+          const n = PRINT_LOCATIONS.indexOf(loc) + 1;
+          const on = activeArea === loc.id;
+          const { x, y, w, h } = loc.rect;
+          return (
+            <g key={loc.id}>
+              <rect
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill={on ? `${zone}26` : used.has(loc.id) ? `${zone}12` : "none"}
+                stroke={zone}
+                strokeWidth={on ? 4 : 3}
+                strokeDasharray="10 7"
+                opacity={on || used.has(loc.id) ? 1 : 0.8}
+              />
+              {/* Number badge, matching the legend */}
+              <circle cx={x} cy={y} r="19" fill={zone} />
+              <text x={x} y={y + 1} textAnchor="middle" dominantBaseline="middle" fontSize="24" fontWeight="800" fill={dark ? "#111" : "#fff"}>
+                {n}
+              </text>
+              {/* Name and size along the bottom, where designs rarely cover it */}
+              {!isSmallArea(loc) && (
+                <text x={x + w / 2} y={y + h - 44} textAnchor="middle" fontSize="28" fontWeight="800" fill={zone}>
+                  {loc.label.toUpperCase()}
+                  <tspan x={x + w / 2} dy="30" fontSize="25" fontWeight="600">
+                    {loc.inches.w}″ × {loc.inches.h}″
+                  </tspan>
+                </text>
+              )}
+            </g>
+          );
+        })}
       </svg>
 
       {layers.map((layer) => {
         const isSel = !readOnly && selected === layer.id;
-        const onGarment = !!pieceAt(layer.box.cx, layer.box.cy, locations);
+        // A design whose area the admin has since hidden won't print.
+        const onGarment = !layer.area || locations.some((l) => l.id === layer.area);
         return (
           <div
             key={layer.id}
@@ -164,7 +225,7 @@ export default function PositionGuide({
             className={`absolute outline-none ${readOnly ? "" : "cursor-move"} ${isSel ? "z-10" : ""}`}
             style={{
               left: pct(layer.box.cx, GUIDE.w),
-              top: pct(layer.box.cy, GUIDE.h),
+              top: pct(layer.box.cy, H),
               width: pct(layer.box.w, GUIDE.w),
               aspectRatio: String(layer.aspect || 1),
               transform: `translate(-50%, -50%) rotate(${layer.box.rotation}rad)`,

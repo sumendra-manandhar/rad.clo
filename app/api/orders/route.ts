@@ -42,6 +42,9 @@ export async function POST(req: Request) {
     for (const p of Array.isArray(it.prints) ? it.prints.slice(0, 12) : []) {
       const loc = visibleLocations(pricing).find((l) => l.id === p.location) ?? null;
       if (!loc) return fail(`Printing on the ${getLocation(p.location)?.label ?? "selected area"} is no longer available.`);
+      if (p.v !== 2) {
+        return fail("We've updated our print areas. Please remove the older item from your cart and add it again.");
+      }
       let designPrice = 0;
       let designName = str(p.designName, 200) || "Custom print";
       let artworkUrl = str(p.artworkUrl, 1000);
@@ -67,6 +70,7 @@ export async function POST(req: Request) {
         designName,
         artworkUrl,
         price: areaFee + designPrice,
+        v: 2,
       });
     }
 

@@ -44,6 +44,11 @@ export type PrintSpec = {
   aspect: number;
   /** Design price, plus the area fee for the first print on each area (set by the server) */
   price?: number;
+  /**
+   * 2 = placement is relative to the print area's box (Oct 2026 on). Older
+   * orders have none: their placement is relative to the whole garment piece.
+   */
+  v?: 2;
 };
 
 export type CartItem = {

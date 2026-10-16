@@ -74,10 +74,8 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
   // Print where store designs print by default (front, or back if front is hidden).
   const areaIds = visibleLocations(pricing).map((l) => l.id).join(",");
   const spot = useMemo(() => fixedPrintFor(areaIds.split(",")), [areaIds]);
-  const areaLabels = visibleLocations(pricing)
-    .map((l) => (l.view === "left" || l.view === "right" ? "Sleeves" : l.label))
-    .filter((v, i, a) => a.indexOf(v) === i)
-    .join(" · ");
+  const areaCount = visibleLocations(pricing).length;
+  const areaLabels = `${areaCount} print area${areaCount === 1 ? "" : "s"}`;
   // Real shape of each design image, so its top edge lands exactly 5.5″ below the shoulder.
   const [aspects, setAspects] = useState<Record<string, number>>({});
   useEffect(() => {

@@ -331,9 +331,10 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
         // Viewer's right when looking at this side of the shirt.
         const right = UP.clone().cross(normal).normalize();
 
-        // Artwork centre on the piece, in inches from the centre line and
-        // from the top of the shoulders.
-        const dx = (pl.x - 0.5) * loc.inches.w * inch;
+        // Artwork centre, in inches from the centre line (the area's own
+        // offset, e.g. left chest, plus its spot inside the area) and from the
+        // top of the shoulders.
+        const dx = ((loc.cx ?? 0) + (pl.x - 0.5) * loc.inches.w) * inch;
         const down = (loc.top + pl.y * loc.inches.h) * inch;
         const aim = new THREE.Vector3(mid.x, rootBox.max.y - down, mid.z).addScaledVector(right, dx);
 
