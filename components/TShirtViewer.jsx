@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, Suspense, useEffect, useMemo, useState } from "react";
+import React, { useRef, Suspense, useEffect, useMemo, useState, useCallback } from "react";
 import { Canvas, useFrame, useThree, createPortal } from "@react-three/fiber";
 import {
   useGLTF,
@@ -119,8 +119,11 @@ function useDecalTexture(src) {
 // panels are stored Z-up and stood upright by a -90° parent rotation, so a
 // decal attached anywhere else misses that rotation and lies flat under the
 // shirt.
-function PrintDecal({ src, placement }) {
+function PrintDecal({ src, placement, onLoaded }) {
   const texture = useDecalTexture(src);
+  useEffect(() => {
+    if (texture) onLoaded(src);
+  }, [texture, src, onLoaded]);
 
   // Artwork width comes from the placement; height follows its aspect ratio.
   const fit = useMemo(() => {
@@ -177,8 +180,14 @@ const OUTWARD = {
 };
 
 // ── The actual GLB model ──────────────────────────────────────────────────────
-function TShirtModel({ color, prints, autoRotate = true }) {
+function TShirtModel({ color, prints, autoRotate = true, onReady }) {
   const group = useRef();
+  // Artwork images that have finished loading (see the ready check below)
+  const [loadedSrcs, setLoadedSrcs] = useState(() => new Set());
+  const markLoaded = useCallback(
+    (src) => setLoadedSrcs((prev) => (prev.has(src) ? prev : new Set(prev).add(src))),
+    []
+  );
   const { scene } = useGLTF("/tshirt.glb");
 
   // Clone so color changes don't mutate the cached asset
@@ -311,8 +320,12 @@ function TShirtModel({ color, prints, autoRotate = true }) {
       .filter(Boolean);
   }, [prints, panels, rootBox, cloned]);
 
+  // Ready once the shirt and every print's artwork are loaded.
+  const allLoaded = placements.every((p) => loadedSrcs.has(p.src));
+
   return (
     <group ref={group}>
+      {allLoaded && <ReadySignal onReady={onReady} />}
       <primitive
         object={cloned}
         scale={scale}
@@ -320,7 +333,7 @@ function TShirtModel({ color, prints, autoRotate = true }) {
         position={[-center.x * scale, -center.y * scale, -center.z * scale]}
       />
       {placements.map((p) => (
-        <PrintDecal key={`${p.key}:${p.src.slice(-40)}`} src={p.src} placement={p.placement} />
+        <PrintDecal key={`${p.key}:${p.src.slice(-40)}`} src={p.src} placement={p.placement} onLoaded={markLoaded} />
       ))}
     </group>
   );
@@ -376,6 +389,18 @@ function Loader() {
   );
 }
 
+// Calls onReady once, after the first frame with the shirt and all its
+// prints on screen. Mounted by TShirtModel only when everything is loaded.
+function ReadySignal({ onReady }) {
+  const sent = useRef(false);
+  useFrame(() => {
+    if (sent.current || !onReady) return;
+    sent.current = true;
+    onReady?.();
+  });
+  return null;
+}
+
 // ── Main exported component ───────────────────────────────────────────────────
 // prints: [{ id?, location, src, placement }] — see lib/print-locations
 // view:   "front" | "back" | "left" | "right" — turns the camera to face it
@@ -386,6 +411,7 @@ export default function TShirtViewer({
   view = null,
   viewNonce = 0,
   autoRotate = true,
+  onReady,
 }) {
   // Keep a stable ref to OrbitControls so we can set a fixed target once.
   // This prevents the camera from re-centering when the model or materials
@@ -470,6 +496,7 @@ export default function TShirtViewer({
           color={color}
           prints={prints}
           autoRotate={isAutoRotating && autoRotate}
+          onReady={onReady}
         />
       </Suspense>
 

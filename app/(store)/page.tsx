@@ -8,6 +8,7 @@ import CategoryExplorer from "@/components/home/CategoryExplorer";
 import WaysToCreate from "@/components/home/WaysToCreate";
 import PriceBuilder from "@/components/home/PriceBuilder";
 import MagneticLink from "@/components/home/MagneticLink";
+import IntroLoader from "@/components/home/IntroLoader";
 
 const TICKER = ["Front", "Back", "Sleeves", "Live 3D preview", "No minimum order", "Wash-tested inks", "Bulk pricing", "Made to order"];
 
@@ -37,6 +38,7 @@ export default async function Home() {
 
   return (
     <div className="bg-paper overflow-x-clip">
+      <IntroLoader />
       <HeroPlayground designs={heroDesigns} pricing={pricing} />
 
       {/* ── Ticker band ── */}

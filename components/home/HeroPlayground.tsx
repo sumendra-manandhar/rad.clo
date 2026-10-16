@@ -7,6 +7,7 @@ import { ArrowRight, MousePointer2, Images, Type, Star } from "lucide-react";
 import type { Design } from "@/lib/types";
 import { COLORS, formatPrice, garmentFor, visibleLocations, type Pricing } from "@/lib/garments";
 import { FIXED_PRINT_SPEC, fixedPrintFor, getLocation, placementFromTop } from "@/lib/print-locations";
+import { markHeroReady } from "@/lib/intro";
 
 const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   ssr: false,
@@ -116,7 +117,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
 
       <div className="relative max-w-7xl mx-auto px-6 pt-12 pb-24 lg:pt-16 lg:pb-28 grid lg:grid-cols-[1fr_1.15fr] gap-10 items-center">
         {/* Copy */}
-        <div className="text-center lg:text-left">
+        <div data-intro-reveal className="text-center lg:text-left">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/5 ring-1 ring-white/15 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em]">
             <span className="w-1.5 h-1.5 rounded-full bg-lime animate-pulse" /> Live 3D print studio
           </span>
@@ -168,9 +169,15 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
         </div>
 
         {/* 3D playground */}
-        <div className="relative">
+        <div data-intro-reveal className="relative">
           <div className="relative h-[440px] sm:h-[560px] lg:h-[620px]">
-            <TShirtViewer color={color} prints={prints} view={spot.location === "back" ? "back" : "front"} autoRotate={false} />
+            <TShirtViewer
+              color={color}
+              prints={prints}
+              view={spot.location === "back" ? "back" : "front"}
+              autoRotate={false}
+              onReady={markHeroReady}
+            />
             <span className="absolute top-4 left-4 inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3 py-1.5 text-[11px] font-semibold pointer-events-none">
               <MousePointer2 className="w-3.5 h-3.5" /> Drag to spin
             </span>

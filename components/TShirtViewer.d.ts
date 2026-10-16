@@ -20,6 +20,8 @@ export type TShirtViewerProps = {
   /** Change to re-focus the same view */
   viewNonce?: number;
   autoRotate?: boolean;
+  /** Called once the shirt and every print's artwork are loaded and drawn */
+  onReady?: () => void;
 };
 
 declare const TShirtViewer: React.FC<TShirtViewerProps>;

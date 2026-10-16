@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -201,10 +201,15 @@ export default function CustomizeStudio({
   // does, re-place it so its top edge sits exactly at the fixed spot — unless
   // the customer has already moved it.
   const initialBox = useRef(layers[0]?.box);
+  // The 3D preview holds the store design back until its real shape is
+  // known, so it's drawn once at its final size instead of jumping.
+  const [shapeKnown, setShapeKnown] = useState(!initialDesign);
   useEffect(() => {
     if (!initialDesign) return;
     const img = new Image();
+    img.onerror = () => setShapeKnown(true);
     img.onload = () => {
+      setShapeKnown(true);
       if (!img.naturalWidth || !img.naturalHeight) return;
       const aspect = img.naturalWidth / img.naturalHeight;
       setLayers((prev) =>
@@ -271,10 +276,20 @@ export default function CustomizeStudio({
     () =>
       throttled
         .map((p) => ({ id: p.layer.id, location: p.loc.id, src: srcOf(p.layer), placement: p.placement }))
-        .filter((p) => p.src),
+        .filter((p) => p.src && shapeKnown),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [throttled]
+    [throttled, shapeKnown]
   );
+
+  // Cover the 3D view until the shirt and the design are fully loaded, so
+  // half-loaded states never show. Gives up after 12s so it can't get stuck.
+  const [previewReady, setPreviewReady] = useState(false);
+  const markPreviewReady = useCallback(() => setPreviewReady(true), []);
+  useEffect(() => {
+    const t = setTimeout(() => setPreviewReady(true), 12000);
+    return () => clearTimeout(t);
+  }, []);
+  const waitingForPrint = !shapeKnown || (!!initialDesign && layers.length > 0 && viewerPrints.length === 0);
   const guideLayers = layers.map((l) => ({ id: l.id, src: srcOf(l), box: l.box, aspect: l.aspect }));
 
   const sel = layers.find((l) => l.id === selected) ?? null;
@@ -481,7 +496,15 @@ export default function CustomizeStudio({
 
   const viewer = (dark: boolean) => (
     <div ref={viewerRef} className="absolute inset-0">
-      <TShirtViewer color={color} prints={viewerPrints} view={view.name} viewNonce={view.n} autoRotate={false} />
+      <TShirtViewer
+        color={color}
+        prints={viewerPrints}
+        view={view.name}
+        viewNonce={view.n}
+        autoRotate={false}
+        onReady={waitingForPrint ? undefined : markPreviewReady}
+      />
+      <PreviewCover dark={dark} hidden={previewReady} />
       <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-1.5">
         {(
           [
@@ -1039,6 +1062,30 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 /** Returns `value`, updated at most once every `ms` (and always with the latest value). */
+// Shown over the 3D view while the shirt and design load
+function PreviewCover({ dark, hidden }: { dark: boolean; hidden: boolean }) {
+  return (
+    <div
+      aria-hidden={hidden}
+      className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 transition-opacity duration-500 ${
+        dark ? "bg-ink text-paper" : "bg-white text-ink"
+      } ${hidden ? "opacity-0 pointer-events-none" : "opacity-100"}`}
+    >
+      <svg viewBox="0 0 200 200" className="w-24 h-24 animate-pulse" aria-hidden>
+        <path
+          d="M72 22 L40 32 L8 62 L30 90 L50 76 L50 180 L150 180 L150 76 L170 90 L192 62 L160 32 L128 22 Q118 42 100 42 Q82 42 72 22 Z"
+          className={dark ? "fill-paper/10 stroke-paper/60" : "fill-ink/5 stroke-ink/40"}
+          strokeWidth="3"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <p className="text-sm font-medium opacity-70" role="status">
+        Preparing your 3D preview…
+      </p>
+    </div>
+  );
+}
+
 function useThrottled<T>(value: T, ms: number) {
   const [out, setOut] = useState(value);
   const last = useRef(0);
