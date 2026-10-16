@@ -74,7 +74,7 @@ export default async function ShopPage({ searchParams }: PageProps<"/shop">) {
         <aside className="lg:w-56 shrink-0">
           <nav className="flex lg:flex-col gap-2 overflow-x-auto pb-2 lg:pb-0 -mx-4 px-4 lg:mx-0 lg:px-0">
             <CatLink href={href({ category: "" })} active={!activeCat} label="All designs" count={designs.length} />
-            {categories.map((c) => (
+            {categories.filter((c) => counts[c.slug] > 0 || activeCat?.id === c.id).map((c) => (
               <CatLink key={c.id} href={href({ category: c.slug })} active={activeCat?.id === c.id} label={c.name} count={counts[c.slug]} />
             ))}
           </nav>

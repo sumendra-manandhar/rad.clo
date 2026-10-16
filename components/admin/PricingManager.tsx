@@ -279,7 +279,7 @@ function VisibilityToggle({ on, disabled, onChange }: { on: boolean; disabled?: 
 function PriceInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <label className="relative block">
-      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">₹</span>
+      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-muted">Rs.</span>
       <input
         type="number"
         min={0}
@@ -287,7 +287,7 @@ function PriceInput({ value, onChange }: { value: string; onChange: (v: string) 
         required
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`${inputCls} pl-8`}
+        className={`${inputCls} pl-11`}
         aria-label="Price"
       />
       {value !== "" && (

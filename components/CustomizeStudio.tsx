@@ -46,6 +46,7 @@ import {
   type PrintView,
 } from "@/lib/print-locations";
 import { useCart } from "@/lib/cart-context";
+import { SizeChartButton } from "@/components/SizeChart";
 import PositionGuide from "@/components/PositionGuide";
 
 const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
@@ -571,6 +572,9 @@ export default function CustomizeStudio({
         </div>
       </Section>
       <Section title="Size & quantity">
+        <div className="-mt-1 mb-2.5">
+          <SizeChartButton garments={garments} garment={garment} />
+        </div>
         <div className="flex flex-wrap gap-1.5">
           {SIZES.map((s) => (
             <button

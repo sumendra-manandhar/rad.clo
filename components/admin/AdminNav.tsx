@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Images, FolderTree, ShoppingCart, Shirt, ExternalLink, LogOut } from "lucide-react";
+import { LayoutDashboard, Images, FolderTree, ShoppingCart, Shirt, ExternalLink, LogOut, ClipboardList } from "lucide-react";
 
 const LINKS = [
   { href: "/admin", label: "Overview", Icon: LayoutDashboard },
   { href: "/admin/designs", label: "Designs", Icon: Images },
   { href: "/admin/categories", label: "Categories", Icon: FolderTree },
   { href: "/admin/orders", label: "Orders", Icon: ShoppingCart },
+  { href: "/admin/quotes", label: "Quotes", Icon: ClipboardList },
   { href: "/admin/pricing", label: "Garments", Icon: Shirt },
 ];
 
@@ -54,7 +55,7 @@ export default function AdminNav() {
         </button>
       </div>
       {/* Mobile */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-ink border-t border-paper/10 grid grid-cols-6">
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-ink border-t border-paper/10 grid grid-cols-7">
         {LINKS.map(({ href, label, Icon }) => {
           const active = href === "/admin" ? pathname === href : pathname.startsWith(href);
           return (

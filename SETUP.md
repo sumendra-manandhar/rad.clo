@@ -21,15 +21,27 @@ refused until `ADMIN_PASSWORD` is set. In `npm run dev` it defaults to `admin123
 | `/shop` | Design store, filterable by category, searchable, sortable |
 | `/customize` | Product page for store designs (fixed print spot) and the full-page 3D editor |
 | `/cart` | Checkout. Places a real order (payment is confirmed by phone) |
-| `/contact` | Contact / bulk-order form (opens the visitor's email app) |
+| `/contact` | Contact channels and the **bulk quote** form (quantity, date needed, budget) |
+| `/size-guide` | Size chart in cm (also a pop-up next to the size picker) |
 | `/admin` | Dashboard: revenue, new orders, best sellers |
 | `/admin/designs` | Upload, edit, price, feature, hide or delete designs |
 | `/admin/categories` | Add, rename, reorder and delete categories |
 | `/admin/orders` | Every order with its prints, print files, customer details and status |
+| `/admin/quotes` | Bulk quote requests, with WhatsApp/call links, status and notes |
 | `/admin/pricing` | Garments & print areas: show/hide each one, prices, garment names, fabric lines and photos |
 
 Useful studio links: `/customize?design=<slug>`, `?garment=hoodie`,
 `?mode=upload`, `?mode=text`, `?color=%231f1f1f`.
+
+## Contact details, size chart
+
+- **Phone, WhatsApp, Viber, Messenger:** fill in `lib/contact.ts`. Empty channels
+  are hidden; the floating "Chat with us" button appears once one is set.
+- **Size chart:** measurements (cm) in `lib/size-chart.ts`. Check them against
+  your supplier. Model photos: put images in `public/models/` and list them in
+  `MODEL_PHOTOS` in the same file.
+- **Bulk quotes:** on an existing Supabase database, run `supabase/quotes.sql`
+  once in the SQL editor (new installs get it from `schema.sql`).
 
 ## How pricing works
 
@@ -37,7 +49,7 @@ Useful studio links: `/customize?design=<slug>`, `?garment=hoodie`,
 price per shirt = garment price
                 + each piece used (front / back / sleeves), charged once
                 + each store design's own price
-shipping        = free from ₹1,499, otherwise ₹99   (lib/garments.ts)
+shipping        = free from Rs. 2,000, otherwise Rs. 100   (lib/garments.ts)
 ```
 
 Garment and print-area prices are edited at `/admin/pricing`, where each garment and print area can also be hidden (hidden ones disappear from the homepage, studio and checkout, and orders using them are refused). If Front is hidden, store designs print on the Back by default. Each design's
@@ -114,6 +126,5 @@ See `components/TShirtViewer.jsx`.
 - Online payments (Razorpay / Stripe): orders are currently confirmed and
   paid by phone.
 - Real product photos, testimonials and stats. The homepage uses placeholders.
-- Contact form opens the visitor's email app. Swap in a form service if needed.
 - `/api/artwork` accepts public image uploads (needed for the cart). Add rate
   limiting if it gets abused.

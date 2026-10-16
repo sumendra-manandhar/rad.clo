@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { ArrowRight, MousePointer2, Images, Type, Star } from "lucide-react";
+import { ArrowRight, MousePointer2, Images, Type } from "lucide-react";
 import type { Design } from "@/lib/types";
 import { COLORS, formatPrice, garmentFor, visibleLocations, type Pricing } from "@/lib/garments";
 import { FIXED_PRINT_SPEC, fixedPrintFor, getLocation, placementFromTop } from "@/lib/print-locations";
@@ -148,23 +148,6 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
             >
               Shop designs
             </Link>
-          </div>
-          <div className="flex items-center gap-4 mt-10 justify-center lg:justify-start">
-            <div className="flex -space-x-2">
-              {["#d4ff3a", "#2f6bff", "#ffffff", "#ff8a65"].map((c, i) => (
-                <span key={c} className="w-9 h-9 rounded-full ring-2 ring-ink flex items-center justify-center text-[11px] font-black text-ink" style={{ background: c }}>
-                  {"RKAN"[i]}
-                </span>
-              ))}
-            </div>
-            <div className="text-left">
-              <div className="flex gap-0.5">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className="w-3.5 h-3.5 fill-lime text-lime" />
-                ))}
-              </div>
-              <p className="text-xs text-white/50 mt-1">Loved by 10,000+ creators & teams</p>
-            </div>
           </div>
         </div>
 

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ShoppingBag, Menu, X, ArrowUpRight } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import CartDrawer from "@/components/CartDrawer";
+import { FREE_SHIPPING_FROM, formatPrice } from "@/lib/garments";
 
 const LINKS = [
   { href: "/shop", label: "Shop Designs" },
@@ -22,7 +23,7 @@ export default function Navbar() {
   return (
     <>
       <div className="bg-ink text-paper text-[11px] sm:text-xs font-medium tracking-wide text-center py-2 px-4">
-        Free shipping on orders over ₹1,499 · No minimum order
+        Free delivery across Nepal on orders over {formatPrice(FREE_SHIPPING_FROM)} · No minimum order
       </div>
       <header className="sticky top-0 z-40 w-full border-b border-line bg-paper/85 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-16">

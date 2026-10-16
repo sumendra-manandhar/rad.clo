@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { connection } from "next/server";
-import { ArrowRight, ArrowUpRight, Plus, Star, MessageCircle } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Plus, MessageCircle } from "lucide-react";
 import { getStorefront } from "@/lib/server/store";
 import { formatPrice, visibleGarments } from "@/lib/garments";
 import HeroPlayground from "@/components/home/HeroPlayground";
@@ -12,18 +12,12 @@ import IntroLoader from "@/components/home/IntroLoader";
 
 const TICKER = ["Front", "Back", "Sleeves", "Live 3D preview", "No minimum order", "Wash-tested inks", "Bulk pricing", "Made to order"];
 
-const TESTIMONIALS = [
-  { text: "Checked my sketch on the 3D preview — the tee looked exactly the same when it arrived.", name: "Aarav S.", role: "Custom oversized tee" },
-  { text: "60 hoodies for our college fest. Fair bulk pricing and every piece arrived on time.", name: "Riya K.", role: "Event organiser" },
-  { text: "No minimum order meant I could launch my label without stocking up.", name: "Kabir M.", role: "Brand founder" },
-  { text: "Put our logo on the chest and names on the back. The position guide made it so easy.", name: "Neha P.", role: "Team lead" },
-];
 
 const FAQS = [
   ["What file types can I upload?", "PNG, JPG and WEBP. For the cleanest print, upload a transparent PNG at least 2000px wide."],
   ["Is there a minimum order?", "No — order a single piece. Orders of 20+ get bulk pricing; tell us the quantity on the contact page."],
   ["How long does it take?", "Most orders are printed within 3–5 working days, plus 2–5 days for delivery depending on your location."],
-  ["Will the print fade or crack?", "Our prints are wash-tested for 50+ cycles. Wash inside out in cold water and don't iron directly on the print."],
+  ["How do I keep the print looking new?", "Wash inside out in cold water, skip the dryer if you can, and don't iron directly on the print."],
   ["Where can I print?", "On the front, the back and either sleeve — each priced separately. Drag, resize and rotate your design and preview it in 3D."],
   ["How do I pay?", "After you place your order, we confirm the design and details with you and share payment options before printing."],
 ];
@@ -148,53 +142,6 @@ export default async function Home() {
         </div>
       </section>
 
-      {/* ── Reviews ── */}
-      <section className="pt-16 pb-24 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-6">
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12">
-            <Heading eyebrow="Reviews" title={<>10,000+ tees<br />and counting.</>} bare />
-            <div className="flex gap-3">
-              {[
-                ["4.8★", "Avg. rating"],
-                ["2,000+", "Custom orders"],
-                ["50+", "Washes tested"],
-              ].map(([n, l]) => (
-                <div key={l} className="rounded-2xl bg-white ring-1 ring-black/5 px-5 py-4">
-                  <p className="font-black text-2xl tracking-[-0.04em]">{n}</p>
-                  <p className="text-[10px] text-muted mt-0.5 uppercase tracking-wider font-bold">{l}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="flex gap-4 overflow-x-auto snap-x px-6 lg:px-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] pb-4">
-          {TESTIMONIALS.map((t, i) => (
-            <figure
-              key={t.name}
-              className={`snap-start shrink-0 w-[300px] sm:w-[380px] rounded-[28px] p-7 flex flex-col ${
-                i === 0 ? "bg-ink text-white" : i === 2 ? "bg-lime" : "bg-white ring-1 ring-black/5"
-              }`}
-            >
-              <div className="flex gap-0.5">
-                {Array.from({ length: 5 }).map((_, k) => (
-                  <Star key={k} className={`w-4 h-4 ${i === 0 ? "fill-lime text-lime" : "fill-ink text-ink"}`} />
-                ))}
-              </div>
-              <blockquote className="mt-5 text-lg font-semibold leading-snug tracking-[-0.01em]">“{t.text}”</blockquote>
-              <figcaption className="mt-auto pt-8 flex items-center gap-3 text-sm">
-                <span className={`w-10 h-10 rounded-full flex items-center justify-center font-black ${i === 0 ? "bg-lime text-ink" : "bg-ink text-white"}`}>
-                  {t.name[0]}
-                </span>
-                <span>
-                  <span className="block font-bold">{t.name}</span>
-                  <span className="block text-xs opacity-60">{t.role}</span>
-                </span>
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      </section>
-
       {/* ── FAQ ── */}
       <section id="faq" className="max-w-7xl mx-auto px-6 pb-24 scroll-mt-20 grid lg:grid-cols-[0.8fr_1.2fr] gap-10">
         <div>
@@ -203,7 +150,7 @@ export default async function Home() {
             <MessageCircle className="w-6 h-6" />
             <p className="font-black uppercase tracking-[-0.02em] mt-4">Ordering 20+ pieces?</p>
             <p className="text-sm text-muted mt-1">Teams, events and brands get tiered pricing and free design help.</p>
-            <Link href="/contact" className="inline-flex items-center gap-2 mt-5 rounded-full bg-ink text-white text-xs font-bold px-5 py-3 hover:bg-flame transition-colors">
+            <Link href="/contact#quote" className="inline-flex items-center gap-2 mt-5 rounded-full bg-ink text-white text-xs font-bold px-5 py-3 hover:bg-flame transition-colors">
               GET A BULK QUOTE <ArrowUpRight className="w-4 h-4" />
             </Link>
           </div>

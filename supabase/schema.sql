@@ -54,6 +54,24 @@ create table if not exists orders (
   created_at timestamptz not null default now()
 );
 
+-- Bulk-order quote requests from the contact page (see also quotes.sql)
+create table if not exists quotes (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  phone text not null,
+  email text,
+  organisation text,
+  purpose text not null,
+  garment text not null,
+  quantity int not null,
+  needed_by date not null,
+  budget text not null,
+  message text,
+  status text not null default 'new',
+  note text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists settings (
   key text primary key,
   value jsonb not null
@@ -63,6 +81,7 @@ alter table categories enable row level security;
 alter table print_designs enable row level security;
 alter table orders enable row level security;
 alter table settings enable row level security;
+alter table quotes enable row level security;
 -- The old storefront read print_designs with the anon key; it no longer does.
 drop policy if exists "Public can read active designs" on print_designs;
 

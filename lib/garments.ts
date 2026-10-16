@@ -64,8 +64,9 @@ export const COLORS = [
 
 export const SIZES = ["S", "M", "L", "XL", "2XL"];
 
-export const FREE_SHIPPING_FROM = 1499;
-export const SHIPPING_FEE = 99;
+// Delivery inside Nepal
+export const FREE_SHIPPING_FROM = 2000;
+export const SHIPPING_FEE = 100;
 
 export function shippingFor(subtotal: number) {
   return subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_FEE;
@@ -79,8 +80,9 @@ export function colorLabel(hex: string) {
   return COLORS.find((c) => c.hex.toLowerCase() === hex.toLowerCase())?.label ?? "Custom";
 }
 
+/** Nepali rupees, with lakh grouping (Rs. 1,00,000) as used in Nepal */
 export function formatPrice(n: number) {
-  return `₹${n.toLocaleString("en-IN")}`;
+  return `Rs. ${n.toLocaleString("en-IN")}`;
 }
 
 /**

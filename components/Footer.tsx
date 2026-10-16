@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Mail } from "lucide-react";
+import { CONTACT, messengerUrl, phoneDisplay, telUrl, whatsappUrl } from "@/lib/contact";
 
 const brandIcon = (d: string) =>
   function BrandIcon({ className }: { className?: string }) {
@@ -63,7 +64,8 @@ export default function Footer() {
             links={[
               ["How it works", "/#how"],
               ["FAQ", "/#faq"],
-              ["Bulk orders", "/contact"],
+              ["Bulk quote", "/contact#quote"],
+              ["Size chart", "/size-guide"],
               ["Your cart", "/cart"],
             ]}
           />
@@ -72,9 +74,25 @@ export default function Footer() {
               Get in touch
             </h3>
             <ul className="space-y-3 text-sm text-paper/70">
-              <li>hello@radclo.com</li>
-              <li>+91 98765 43210</li>
-              <li>Mon–Sat, 10am–7pm</li>
+              <li>
+                <a href={`mailto:${CONTACT.email}`} className="hover:text-paper">{CONTACT.email}</a>
+              </li>
+              {phoneDisplay && (
+                <li>
+                  <a href={telUrl} className="hover:text-paper">{phoneDisplay}</a>
+                </li>
+              )}
+              {whatsappUrl() && (
+                <li>
+                  <a href={whatsappUrl()} target="_blank" rel="noopener noreferrer" className="hover:text-paper">WhatsApp / Viber</a>
+                </li>
+              )}
+              {messengerUrl && (
+                <li>
+                  <a href={messengerUrl} target="_blank" rel="noopener noreferrer" className="hover:text-paper">Messenger</a>
+                </li>
+              )}
+              <li>{CONTACT.hours}</li>
             </ul>
           </div>
         </div>

@@ -171,6 +171,24 @@ function PanelDecal({ mesh, position, rotation, scale, texture }) {
   );
 }
 
+// Dyed cotton never looks pitch black: the fibres scatter light, so folds
+// and knit stay visible. Lift very dark colours slightly (in linear space,
+// darkest colours the most) and add a soft fabric sheen. Only the 3D preview
+// changes; orders keep the exact colour picked.
+const WHITE = new THREE.Color(1, 1, 1);
+function fabricColor(hex) {
+  const c = new THREE.Color(hex);
+  const lum = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+  const lift = 0.035 * (1 - Math.min(1, lum / 0.2));
+  c.r = lift + c.r * (1 - lift);
+  c.g = lift + c.g * (1 - lift);
+  c.b = lift + c.b * (1 - lift);
+  return c;
+}
+function sheenFor(hex) {
+  return new THREE.Color(hex).lerp(WHITE, 0.55).multiplyScalar(0.3);
+}
+
 const UP = new THREE.Vector3(0, 1, 0);
 const OUTWARD = {
   front: new THREE.Vector3(0, 0, 1),
@@ -203,6 +221,11 @@ function TShirtModel({ color, prints, autoRotate = true, onReady }) {
     cloned.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
       obj.material = obj.material.clone();
+      // Soft cotton sheen (the model's material is MeshPhysicalMaterial)
+      if ("sheen" in obj.material) {
+        obj.material.sheen = 1;
+        obj.material.sheenRoughness = 0.85;
+      }
       obj.castShadow = true;
       obj.receiveShadow = true;
       if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
@@ -216,9 +239,11 @@ function TShirtModel({ color, prints, autoRotate = true, onReady }) {
   }, [cloned]);
 
   useEffect(() => {
-    const hex = new THREE.Color(color);
+    const base = fabricColor(color);
+    const sheen = sheenFor(color);
     panels.forEach(({ mesh }) => {
-      mesh.material.color.set(hex);
+      mesh.material.color.copy(base);
+      if (mesh.material.sheenColor) mesh.material.sheenColor.copy(sheen);
       mesh.material.needsUpdate = true;
     });
   }, [color, panels]);

@@ -4,7 +4,17 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { revalidateTag, unstable_cache } from "next/cache";
-import { ORDER_STATUSES, type Category, type Design, type Order, type OrderStatus, type Settings } from "@/lib/types";
+import {
+  ORDER_STATUSES,
+  QUOTE_STATUSES,
+  type Category,
+  type Design,
+  type Order,
+  type OrderStatus,
+  type Quote,
+  type QuoteStatus,
+  type Settings,
+} from "@/lib/types";
 import { resolvePricing } from "@/lib/garments";
 import { SEED_CATEGORIES, SEED_DESIGNS } from "@/lib/server/seed";
 
@@ -23,6 +33,8 @@ import { SEED_CATEGORIES, SEED_DESIGNS } from "@/lib/server/seed";
 export type NewDesign = Omit<Design, "id" | "createdAt" | "slug"> & { slug?: string };
 export type NewCategory = Omit<Category, "id" | "createdAt">;
 export type NewOrder = Omit<Order, "id" | "createdAt" | "number" | "status">;
+export type NewQuote = Omit<Quote, "id" | "createdAt" | "status" | "note">;
+export type QuotePatch = { status?: QuoteStatus; note?: string };
 
 interface Store {
   listCategories(): Promise<Category[]>;
@@ -39,6 +51,10 @@ interface Store {
   listOrders(): Promise<Order[]>;
   createOrder(input: NewOrder): Promise<Order>;
   updateOrder(id: string, patch: { status?: OrderStatus; note?: string }): Promise<Order | null>;
+
+  listQuotes(): Promise<Quote[]>;
+  createQuote(input: NewQuote): Promise<Quote>;
+  updateQuote(id: string, patch: QuotePatch): Promise<Quote | null>;
 
   getSettings(): Promise<Settings>;
   updateSettings(patch: Partial<Settings>): Promise<Settings>;
@@ -63,7 +79,7 @@ const byCreatedDesc = <T extends { createdAt: string }>(a: T, b: T) =>
   b.createdAt.localeCompare(a.createdAt);
 
 // ── Local JSON driver ───────────────────────────────────────────────────────
-type DB = { categories: Category[]; designs: Design[]; orders: Order[]; settings?: Settings };
+type DB = { categories: Category[]; designs: Design[]; orders: Order[]; quotes?: Quote[]; settings?: Settings };
 
 const EMPTY_SETTINGS: Settings = {
   garmentPrices: {},
@@ -215,6 +231,25 @@ class LocalStore implements Store {
     });
   }
 
+  async listQuotes() {
+    return ((await this.read()).quotes ?? []).sort(byCreatedDesc);
+  }
+  createQuote(input: NewQuote) {
+    return this.mutate((db) => {
+      const q: Quote = { ...input, id: randomUUID(), status: "new", createdAt: new Date().toISOString() };
+      (db.quotes ??= []).push(q);
+      return q;
+    });
+  }
+  updateQuote(id: string, patch: QuotePatch) {
+    return this.mutate((db) => {
+      const q = db.quotes?.find((x) => x.id === id);
+      if (!q) return null;
+      Object.assign(q, patch);
+      return q;
+    });
+  }
+
   async getSettings() {
     return { ...EMPTY_SETTINGS, ...(await this.read()).settings };
   }
@@ -353,6 +388,39 @@ const toOrder = (r: OrderRow): Order => ({
   createdAt: r.created_at,
 });
 
+type QuoteRow = {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  organisation: string | null;
+  purpose: string;
+  garment: string;
+  quantity: number;
+  needed_by: string;
+  budget: string;
+  message: string | null;
+  status: string;
+  note: string | null;
+  created_at: string;
+};
+const toQuote = (r: QuoteRow): Quote => ({
+  id: r.id,
+  name: r.name,
+  phone: r.phone,
+  email: r.email ?? undefined,
+  organisation: r.organisation ?? undefined,
+  purpose: r.purpose,
+  garment: r.garment,
+  quantity: r.quantity,
+  neededBy: r.needed_by,
+  budget: r.budget,
+  message: r.message ?? undefined,
+  status: (QUOTE_STATUSES as readonly string[]).includes(r.status) ? (r.status as QuoteStatus) : "new",
+  note: r.note ?? undefined,
+  createdAt: r.created_at,
+});
+
 // Throws on a Supabase error; callers cast the untyped result to their row type.
 function check(res: { data: unknown; error: { message: string } | null }): unknown {
   if (res.error) throw new Error(res.error.message);
@@ -445,6 +513,36 @@ class SupabaseStore implements Store {
     return row ? toOrder(row as OrderRow) : null;
   }
 
+  async listQuotes() {
+    const rows = check(await this.db.from("quotes").select("*").order("created_at", { ascending: false }));
+    return (rows as QuoteRow[]).map(toQuote);
+  }
+  async createQuote(q: NewQuote) {
+    const row = check(
+      await this.db
+        .from("quotes")
+        .insert({
+          name: q.name,
+          phone: q.phone,
+          email: q.email ?? null,
+          organisation: q.organisation ?? null,
+          purpose: q.purpose,
+          garment: q.garment,
+          quantity: q.quantity,
+          needed_by: q.neededBy,
+          budget: q.budget,
+          message: q.message ?? null,
+        })
+        .select()
+        .single()
+    );
+    return toQuote(row as QuoteRow);
+  }
+  async updateQuote(id: string, patch: QuotePatch) {
+    const row = check(await this.db.from("quotes").update(patch).eq("id", id).select().maybeSingle());
+    return row ? toQuote(row as QuoteRow) : null;
+  }
+
   async getSettings() {
     const row = check(await this.db.from("settings").select("value").eq("key", "pricing").maybeSingle()) as
       | { value: Settings }
@@ -487,7 +585,7 @@ const backend: Store =
 // change when the admin saves something, so they're cached instead of
 // hitting the database on every click. Every write through `store` clears
 // the cache straight away. Edits made directly in the Supabase dashboard
-// show up within 5 minutes. Orders are never cached.
+// show up within 5 minutes. Orders and quotes are never cached.
 const CATALOG_TAG = "catalog";
 
 function withCatalogCache(s: Store): Store {
@@ -516,6 +614,10 @@ function withCatalogCache(s: Store): Store {
     listOrders: () => s.listOrders(),
     createOrder: (input) => s.createOrder(input),
     updateOrder: (id, patch) => s.updateOrder(id, patch),
+
+    listQuotes: () => s.listQuotes(),
+    createQuote: (input) => s.createQuote(input),
+    updateQuote: (id, patch) => s.updateQuote(id, patch),
 
     getSettings: cached("settings", () => s.getSettings()),
     updateSettings: changes((patch) => s.updateSettings(patch)),

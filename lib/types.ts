@@ -13,7 +13,7 @@ export type Design = {
   slug: string;
   /** Category slug */
   category: string;
-  /** Print price in ₹, added on top of the garment's base price */
+  /** Print price in Rs. (NPR), added on top of the garment's base price */
   price: number;
   image: string;
   description?: string;
@@ -96,5 +96,48 @@ export type Order = {
   items: CartItem[];
   total: number;
   status: OrderStatus;
+  note?: string;
+};
+
+/** What a bulk order is for — matches who orders in bulk in Nepal. */
+export const QUOTE_PURPOSES = [
+  "College fest / farewell",
+  "Sports team (futsal, cricket…)",
+  "Company / office",
+  "NGO / event",
+  "Trekking / travel agency",
+  "Café, gym or shop",
+  "Gift (Bhai Tika, couple, birthday)",
+  "Creator / brand merch",
+  "Other",
+] as const;
+
+export const QUOTE_BUDGETS = [
+  "Under Rs. 600 / piece",
+  "Rs. 600–900 / piece",
+  "Rs. 900–1,200 / piece",
+  "Rs. 1,200+ / piece",
+  "Not sure yet",
+] as const;
+
+export const QUOTE_STATUSES = ["new", "contacted", "won", "lost"] as const;
+export type QuoteStatus = (typeof QUOTE_STATUSES)[number];
+
+/** A bulk-order quote request from the contact page */
+export type Quote = {
+  id: string;
+  createdAt: string;
+  name: string;
+  phone: string;
+  email?: string;
+  organisation?: string;
+  purpose: string;
+  garment: string;
+  quantity: number;
+  /** Date needed, YYYY-MM-DD */
+  neededBy: string;
+  budget: string;
+  message?: string;
+  status: QuoteStatus;
   note?: string;
 };

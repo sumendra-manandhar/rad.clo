@@ -272,7 +272,7 @@ function DesignForm({
                   ))}
                 </select>
               </Field>
-              <Field label="Design price (₹)">
+              <Field label="Design price (Rs.)">
                 <input required type="number" min={0} step={1} value={price} onChange={(e) => setPrice(e.target.value)} className={inputCls} />
               </Field>
             </div>
