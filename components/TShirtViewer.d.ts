@@ -22,6 +22,10 @@ export type TShirtViewerProps = {
   autoRotate?: boolean;
   /** Called once the shirt and every print's artwork are loaded and drawn */
   onReady?: () => void;
+  /** Change this number to spin the shirt one full turn */
+  spin?: number;
+  /** Called mid-spin, when the back faces the camera */
+  onSpinHalfway?: () => void;
 };
 
 declare const TShirtViewer: React.FC<TShirtViewerProps>;

@@ -198,8 +198,33 @@ const OUTWARD = {
 };
 
 // ── The actual GLB model ──────────────────────────────────────────────────────
-function TShirtModel({ color, prints, autoRotate = true, onReady }) {
+const SPIN_SECONDS = 1.1;
+const TURN = Math.PI * 2;
+const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
+
+function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway }) {
   const group = useRef();
+
+  // One full turn each time `spin` changes. onSpinHalfway fires when the back
+  // faces the camera, so the caller can swap the print out of sight.
+  const spinAnim = useRef(null);
+  const lastSpin = useRef(spin);
+  const halfway = useRef(onSpinHalfway);
+  useEffect(() => {
+    halfway.current = onSpinHalfway;
+  });
+  useEffect(() => {
+    if (spin === lastSpin.current) return;
+    lastSpin.current = spin;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      halfway.current?.();
+      return;
+    }
+    const from = group.current?.rotation.y ?? 0;
+    // Always finish facing front, even if a new spin starts mid-turn.
+    const to = Math.ceil((from + Math.PI) / TURN) * TURN;
+    spinAnim.current = { t: 0, from, to, swapped: false };
+  }, [spin]);
   // Artwork images that have finished loading (see the ready check below)
   const [loadedSrcs, setLoadedSrcs] = useState(() => new Set());
   const markLoaded = useCallback(
@@ -250,9 +275,23 @@ function TShirtModel({ color, prints, autoRotate = true, onReady }) {
 
   // Gentle auto-rotation (paused when user is dragging via OrbitControls)
   useFrame((_, delta) => {
-    if (group.current && autoRotate) {
-      group.current.rotation.y += delta * 0.2; // Adjust rotation speed here
+    if (!group.current) return;
+    const a = spinAnim.current;
+    if (a) {
+      a.t = Math.min(1, a.t + delta / SPIN_SECONDS);
+      const angle = a.from + (a.to - a.from) * easeInOutCubic(a.t);
+      group.current.rotation.y = angle;
+      if (!a.swapped && angle >= a.to - Math.PI) {
+        a.swapped = true;
+        halfway.current?.();
+      }
+      if (a.t >= 1) {
+        group.current.rotation.y = a.to % TURN;
+        spinAnim.current = null;
+      }
+      return;
     }
+    if (autoRotate) group.current.rotation.y += delta * 0.2; // Adjust rotation speed here
   });
 
   // Center & scale the model to fit nicely — compute once per loaded model
@@ -437,6 +476,8 @@ export default function TShirtViewer({
   viewNonce = 0,
   autoRotate = true,
   onReady,
+  spin,
+  onSpinHalfway,
 }) {
   // Keep a stable ref to OrbitControls so we can set a fixed target once.
   // This prevents the camera from re-centering when the model or materials
@@ -522,6 +563,8 @@ export default function TShirtViewer({
           prints={prints}
           autoRotate={isAutoRotating && autoRotate}
           onReady={onReady}
+          spin={spin}
+          onSpinHalfway={onSpinHalfway}
         />
       </Suspense>
 

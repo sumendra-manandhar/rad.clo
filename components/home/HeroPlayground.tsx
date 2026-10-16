@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowRight, MousePointer2, Images, Type } from "lucide-react";
@@ -42,12 +42,25 @@ function renderWord(text: string, color: string) {
 
 export default function HeroPlayground({ designs, pricing }: { designs: Design[]; pricing: Pricing }) {
   const [mode, setMode] = useState<"design" | "text">("design");
+  // `designId` is the picked thumbnail; `shownId` is what's printed on the
+  // shirt. Picking a design spins the shirt and swaps the print halfway round.
   const [designId, setDesignId] = useState(designs[0]?.id ?? "");
+  const [shownId, setShownId] = useState(designId);
+  const [spin, setSpin] = useState(0);
+  const pending = useRef(designId);
+  const pickDesign = (id: string) => {
+    if (id === designId) return;
+    setDesignId(id);
+    pending.current = id;
+    setSpin((n) => n + 1);
+  };
+  const onSpinHalfway = useCallback(() => setShownId(pending.current), []);
   const [text, setText] = useState("YOUR TEXT");
   const [color, setColor] = useState("#ffffff");
   const [textArt, setTextArt] = useState<{ src: string; aspect: number } | null>(null);
 
   const design = designs.find((d) => d.id === designId);
+  const shown = designs.find((d) => d.id === shownId);
   const ink = color === "#ffffff" || color === "#d9c7a7" ? "#111111" : "#ffffff";
 
   // Live text → texture, debounced so typing stays smooth.
@@ -57,7 +70,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     return () => clearTimeout(t);
   }, [mode, text, ink]);
 
-  const src = mode === "design" ? design?.image : textArt?.src;
+  const src = mode === "design" ? shown?.image : textArt?.src;
   // Print where store designs print by default (front, or back if front is hidden).
   const areaIds = visibleLocations(pricing).map((l) => l.id).join(",");
   const spot = useMemo(() => fixedPrintFor(areaIds.split(",")), [areaIds]);
@@ -76,7 +89,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     img.src = design.image;
   }, [design, aspects]);
 
-  const designAspect = design ? aspects[design.id] ?? 1 : 1;
+  const designAspect = shown ? aspects[shown.id] ?? 1 : 1;
   const prints = useMemo(() => {
     if (!src) return [];
     const loc = getLocation(spot.location)!;
@@ -160,6 +173,8 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
               view={spot.location === "back" ? "back" : "front"}
               autoRotate={false}
               onReady={markHeroReady}
+              spin={spin}
+              onSpinHalfway={onSpinHalfway}
             />
             <span className="absolute top-4 left-4 inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3 py-1.5 text-[11px] font-semibold pointer-events-none">
               <MousePointer2 className="w-3.5 h-3.5" /> Drag to spin
@@ -215,7 +230,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
                   {designs.map((d) => (
                     <button
                       key={d.id}
-                      onClick={() => setDesignId(d.id)}
+                      onClick={() => pickDesign(d.id)}
                       title={d.name}
                       className={`shrink-0 w-14 h-14 rounded-2xl bg-white p-1.5 transition-all ${
                         designId === d.id ? "ring-[3px] ring-lime scale-105" : "opacity-70 hover:opacity-100"
