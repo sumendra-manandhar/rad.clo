@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import { ShoppingBag, Menu, X, ArrowUpRight } from "lucide-react";
+import { ShoppingBag, ArrowUpRight, Search } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import CartDrawer from "@/components/CartDrawer";
 import { FREE_SHIPPING_FROM, formatPrice } from "@/lib/garments";
@@ -18,15 +17,17 @@ const LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const { totalCount, openCart } = useCart();
-  const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
     <>
       <div className="bg-ink text-paper text-[11px] sm:text-xs font-medium tracking-wide text-center py-2 px-4">
-        Free delivery across Nepal on orders over {formatPrice(FREE_SHIPPING_FROM)} · No minimum order
+        <span className="sm:hidden">Free delivery over {formatPrice(FREE_SHIPPING_FROM)} · No minimum</span>
+        <span className="hidden sm:inline">
+          Free delivery across Nepal on orders over {formatPrice(FREE_SHIPPING_FROM)} · No minimum order
+        </span>
       </div>
       <header className="sticky top-0 z-40 w-full border-b border-line bg-paper/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-16">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 h-14 md:h-16">
           <Link href="/" className="font-display text-2xl font-extrabold tracking-tight">
             Rad<span className="text-flame">.</span>Clo
           </Link>
@@ -55,10 +56,14 @@ export default function Navbar() {
             >
               Start designing <ArrowUpRight className="w-4 h-4" />
             </Link>
+            {/* Phones use the bottom tab bar for the cart and menu */}
+            <Link href="/shop" aria-label="Search designs" className="md:hidden p-2.5 rounded-full hover:bg-ink/5">
+              <Search className="w-5 h-5" />
+            </Link>
             <button
               onClick={openCart}
               aria-label="Open cart"
-              className="relative p-2.5 rounded-full hover:bg-ink/5 transition-colors"
+              className="relative p-2.5 rounded-full hover:bg-ink/5 transition-colors hidden md:block"
             >
               <ShoppingBag className="w-5 h-5" />
               {totalCount > 0 && (
@@ -67,30 +72,10 @@ export default function Navbar() {
                 </span>
               )}
             </button>
-            <button
-              onClick={() => setMobileOpen((v) => !v)}
-              className="md:hidden p-2.5 rounded-full hover:bg-ink/5"
-              aria-label="Toggle menu"
-            >
-              {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
-            </button>
+
           </div>
         </div>
 
-        {mobileOpen && (
-          <nav className="md:hidden border-t border-line px-4 py-3 flex flex-col bg-paper">
-            {LINKS.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                onClick={() => setMobileOpen(false)}
-                className="text-base font-medium py-3 border-b border-line last:border-0"
-              >
-                {l.label}
-              </Link>
-            ))}
-          </nav>
-        )}
       </header>
       <CartDrawer />
     </>

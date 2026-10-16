@@ -126,7 +126,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
         RAD.CLO
       </p>
 
-      <div className="relative max-w-7xl mx-auto px-6 pt-12 pb-24 lg:pt-16 lg:pb-28 grid lg:grid-cols-[1fr_1.15fr] gap-10 items-center">
+      <div className="relative max-w-7xl mx-auto px-6 pt-12 pb-24 lg:pt-16 lg:pb-28 grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1fr_1.15fr] gap-10 items-center">
         {/* Copy */}
         <div data-intro-reveal className="text-center lg:text-left">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/5 ring-1 ring-white/15 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em]">

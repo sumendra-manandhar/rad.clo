@@ -26,6 +26,8 @@ export type TShirtViewerProps = {
   spin?: number;
   /** Called mid-spin, when the back faces the camera */
   onSpinHalfway?: () => void;
+  /** Called with a print's id when the customer taps it on the shirt */
+  onSelectPrint?: (id: string) => void;
 };
 
 declare const TShirtViewer: React.FC<TShirtViewerProps>;

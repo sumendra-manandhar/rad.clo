@@ -23,6 +23,15 @@ import {
   Layers as LayersIcon,
   Shirt,
   ChevronDown,
+  ArrowUpToLine,
+  ArrowDownToLine,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  Undo2,
+  Redo2,
+  Box,
+  LayoutGrid,
 } from "lucide-react";
 import type { Category, Design, PrintPlacement, PrintSpec } from "@/lib/types";
 import {
@@ -54,6 +63,19 @@ import { useCart } from "@/lib/cart-context";
 import { SizeChartButton } from "@/components/SizeChart";
 import PositionGuide from "@/components/PositionGuide";
 import { PrintAreasLegend } from "@/components/PrintAreas";
+import {
+  DEFAULT_TEXT_STYLE,
+  FONT_GROUPS,
+  TEXT_COLORS,
+  TEXT_FONTS,
+  fontById,
+  fontPreview,
+  lowContrast,
+  readableOn,
+  renderTextArt,
+  textArtKey,
+  type TextStyle,
+} from "@/lib/text-art";
 
 const PRINT_AREA_NUMBER = (l: PrintLocation) => PRINT_LOCATIONS.indexOf(l) + 1;
 
@@ -69,7 +91,7 @@ type Tab = "store" | "upload" | "text";
 type Art =
   | { type: "gallery"; designId: string }
   | { type: "upload"; src: string; name: string }
-  | { type: "text"; src: string; text: string; fontId: string; color: string; rendered: string };
+  | { type: "text"; src: string; text: string; style: TextStyle; rendered: string };
 
 /** A design on the garment: artwork, the print area it's in and its box on the position guide. */
 type Layer = Art & { id: string; area: string; box: GuideBox; aspect: number };
@@ -80,45 +102,23 @@ function refit<T extends Layer>(l: T): T {
   return area ? { ...l, box: fitInside(l.box, l.aspect, area.rect) } : l;
 }
 
-const TEXT_FONTS = [
-  { id: "display", label: "Display", css: () => cssVarFont("--font-bricolage"), weight: 800, preview: "var(--font-bricolage)" },
-  { id: "sans", label: "Sans", css: () => cssVarFont("--font-inter"), weight: 700, preview: "var(--font-inter)" },
-  { id: "impact", label: "Impact", css: () => "Impact, 'Arial Black', sans-serif", weight: 400, preview: "Impact, sans-serif" },
-  { id: "serif", label: "Serif", css: () => "Georgia, 'Times New Roman', serif", weight: 700, preview: "Georgia, serif" },
-  { id: "mono", label: "Mono", css: () => "'Courier New', monospace", weight: 700, preview: "'Courier New', monospace" },
-];
-const TEXT_COLORS = ["#121212", "#ffffff", "#ff5b1f", "#d4ff3a", "#1E334D", "#c1121f", "#f2c14e"];
+const textKey = (a: { text: string; style: TextStyle }) => textArtKey(a.text, a.style);
 
-function cssVarFont(name: string) {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return v || "sans-serif";
-}
+/** What the customer can see/change about the layers (ignores re-rendered images). */
+const stepKey = (ls: Layer[]) =>
+  JSON.stringify(
+    ls.map((l) => {
+      const { src: _src, rendered: _r, aspect: _a, ...rest } = l as Layer & { src?: string; rendered?: string };
+      void _src;
+      void _r;
+      void _a;
+      const b = l.box;
+      return { ...rest, box: [Math.round(b.cx), Math.round(b.cy), Math.round(b.w), Math.round(b.rotation * 100)] };
+    })
+  );
 
-const textKey = (a: { text: string; fontId: string; color: string }) => `${a.fontId}|${a.color}|${a.text}`;
-
-/** Renders text to a transparent PNG cropped tightly around the text. */
-function renderText(text: string, fontId: string, color: string) {
-  const font = TEXT_FONTS.find((f) => f.id === fontId) ?? TEXT_FONTS[0];
-  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean).slice(0, 4);
-  if (!lines.length) return null;
-  const fontSize = 220;
-  const lh = fontSize * 1.1;
-  const pad = fontSize * 0.15;
-  const css = `${font.weight} ${fontSize}px ${font.css()}`;
-  const measure = document.createElement("canvas").getContext("2d")!;
-  measure.font = css;
-  const widest = Math.max(...lines.map((l) => measure.measureText(l).width));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(widest + pad * 2);
-  canvas.height = Math.ceil(lh * lines.length + pad * 2);
-  const ctx = canvas.getContext("2d")!;
-  ctx.font = css;
-  ctx.fillStyle = color;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  lines.forEach((l, i) => ctx.fillText(l, canvas.width / 2, pad + lh * (i + 0.5)));
-  return { src: canvas.toDataURL("image/png"), aspect: canvas.width / canvas.height };
-}
+const DRAFT_KEY = "radclo:studio-draft";
+type Draft = { garment: string; color: string; size: string; qty: number; layers: Layer[] };
 
 /** Normalises any uploaded image (incl. SVG) to a PNG data URL, max 2048px. */
 function fileToPng(file: File): Promise<{ src: string; aspect: number }> {
@@ -204,6 +204,90 @@ export default function CustomizeStudio({
   );
   const [editorOpen, setEditorOpen] = useState(!initialDesign);
 
+  // ── Undo / redo ──────────────────────────────────────────────────────────
+  // A burst of changes (one drag, typing a word) becomes one undo step.
+  // Automatic updates (image shapes, re-rendered text) never add a step and
+  // never cancel the customer's pending one.
+  const hist = useRef({
+    past: [] as Layer[][],
+    future: [] as Layer[][],
+    last: layers, // state after the latest committed step
+    base: null as Layer[] | null, // state before the pending burst
+    latest: layers,
+    // States produced by automatic updates (exact objects, so batching can't mix them up)
+    auto: new WeakSet<Layer[]>(),
+    timer: undefined as ReturnType<typeof setTimeout> | undefined,
+  });
+  const [histFlags, setHistFlags] = useState({ undo: false, redo: false });
+  const syncHistory = () =>
+    setHistFlags({ undo: hist.current.past.length > 0 || hist.current.base !== null, redo: hist.current.future.length > 0 });
+  const commitPending = () => {
+    const h = hist.current;
+    clearTimeout(h.timer);
+    if (h.base === null) return;
+    // Nothing the customer can see changed (e.g. only a re-rendered image): no step.
+    if (stepKey(h.base) === stepKey(h.latest)) {
+      h.base = null;
+      h.last = h.latest;
+      syncHistory();
+      return;
+    }
+    h.past.push(h.base);
+    if (h.past.length > 60) h.past.shift();
+    h.future = [];
+    h.base = null;
+    h.last = h.latest;
+    syncHistory();
+  };
+  const setLayersSilently = (fn: (prev: Layer[]) => Layer[]) =>
+    setLayers((prev) => {
+      const next = fn(prev);
+      hist.current.auto.add(next);
+      return next;
+    });
+  useEffect(() => {
+    const h = hist.current;
+    h.latest = layers;
+    if (h.auto.has(layers)) {
+      if (h.base === null) h.last = layers;
+      return;
+    }
+    if (layers === h.last) return;
+    if (h.base === null) {
+      h.base = h.last;
+      syncHistory();
+    }
+    clearTimeout(h.timer);
+    h.timer = setTimeout(commitPending, 350);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layers]);
+  useEffect(() => () => clearTimeout(hist.current.timer), []);
+  const jumpTo = (state: Layer[]) => {
+    const h = hist.current;
+    h.last = state;
+    h.latest = state;
+    setLayers(state);
+    syncHistory();
+  };
+  const undo = () => {
+    commitPending();
+    const h = hist.current;
+    const prev = h.past.pop();
+    if (!prev) return;
+    h.future.push(h.last);
+    jumpTo(prev);
+  };
+  const redo = () => {
+    commitPending();
+    const h = hist.current;
+    const next = h.future.pop();
+    if (!next) return;
+    h.past.push(h.last);
+    jumpTo(next);
+  };
+  const canUndo = histFlags.undo;
+  const canRedo = histFlags.redo;
+
   // The store design's real shape isn't known until its image loads. Once it
   // does, re-place it so its top edge sits exactly at the fixed spot — unless
   // the customer has already moved it.
@@ -219,7 +303,7 @@ export default function CustomizeStudio({
       setShapeKnown(true);
       if (!img.naturalWidth || !img.naturalHeight) return;
       const aspect = img.naturalWidth / img.naturalHeight;
-      setLayers((prev) =>
+      setLayersSilently((prev) =>
         prev.map((l) => {
           if (l.type !== "gallery" || l.designId !== initialDesign.id) return l;
           if (l.box !== initialBox.current) return refit({ ...l, aspect });
@@ -239,6 +323,8 @@ export default function CustomizeStudio({
   const [panel, setPanel] = useState<"add" | "designs" | "shirt">(initialDesign && !mode ? "designs" : "add");
   // Print area new designs go to (null = the main area of the side being viewed).
   const [addTo, setAddTo] = useState<string | null>(null);
+  // Phones show either the 3D shirt or the flat position guide above the tools.
+  const [stage, setStage] = useState<"3d" | "guide">("3d");
   const [newText, setNewText] = useState("YOUR TEXT");
   const [view, setView] = useState<{ name: PrintView; n: number }>({ name: "front", n: 0 });
 
@@ -343,6 +429,17 @@ export default function CustomizeStudio({
     setSelected(copy.id);
   };
 
+  /** Moves a design one step up (in front) or down (behind) in the stack. */
+  const reorderLayer = (id: string, dir: 1 | -1) =>
+    setLayers((prev) => {
+      const i = prev.findIndex((l) => l.id === id);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+
   const selectLayer = (id: string | null) => {
     setSelected(id);
     const l = layers.find((x) => x.id === id);
@@ -358,9 +455,14 @@ export default function CustomizeStudio({
       (l): l is Extract<Layer, { type: "text" }> => l.type === "text" && l.rendered !== textKey(l)
     );
     if (!stale.length) return;
-    const t = setTimeout(() => {
-      const results = new Map(stale.map((l) => [l.id, { key: textKey(l), out: renderText(l.text, l.fontId, l.color) }]));
-      setLayers((prev) =>
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const done = await Promise.all(
+        stale.map(async (l) => [l.id, { key: textKey(l), out: await renderTextArt(l.text, l.style) }] as const)
+      );
+      if (cancelled) return;
+      const results = new Map(done);
+      setLayersSilently((prev) =>
         prev.map((l) => {
           const r = results.get(l.id);
           if (!r || l.type !== "text" || textKey(l) !== r.key) return l;
@@ -368,19 +470,19 @@ export default function CustomizeStudio({
         })
       );
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textSig]);
 
-  const addText = (initial = "YOUR TEXT") => {
-    const dark = ["#1f1f1f", "#1E334D", "#662735", "#476748", "#6F7573"].includes(color);
-    const textColor = dark ? "#ffffff" : "#121212";
-    const out = renderText(initial, TEXT_FONTS[0].id, textColor);
+  const addText = async (initial = "YOUR TEXT") => {
+    // Start with a colour that reads well on this shirt.
+    const style: TextStyle = { ...DEFAULT_TEXT_STYLE, color: readableOn(color), outlineColor: readableOn(readableOn(color)) };
+    const out = await renderTextArt(initial, style);
     if (!out) return;
-    addLayer(
-      { type: "text", src: out.src, text: initial, fontId: TEXT_FONTS[0].id, color: textColor, rendered: "" },
-      out.aspect
-    );
+    addLayer({ type: "text", src: out.src, text: initial, style, rendered: textArtKey(initial, style) }, out.aspect);
   };
 
   // ?mode=text&text=… (from the homepage playground) starts with that text on the front.
@@ -416,9 +518,21 @@ export default function CustomizeStudio({
   }, [editorOpen]);
 
   useEffect(() => {
-    if (!editorOpen || !selected) return;
+    if (!editorOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest("input, textarea, select")) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        redo();
+        return;
+      }
+      if (!selected) return;
       if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
         removeLayer(selected);
@@ -427,7 +541,64 @@ export default function CustomizeStudio({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editorOpen, selected]);
+  }, [editorOpen, selected, layers]);
+
+  // ── Draft: designs started from a blank shirt survive a refresh ──────────
+  // (Store-design links always open that design instead.)
+  const draftable = !initialDesign && !params.get("text");
+  const [restored, setRestored] = useState(false);
+  const draftLoaded = useRef(false);
+  const restoreDraft = () => {
+    let d: Draft | null = null;
+    try {
+      d = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    } catch {
+      d = null;
+    }
+    if (!d?.layers?.length) return;
+    const ok = d.layers.filter((l) => getLocation(l.area) && (l.type !== "gallery" || designById(l.designId)));
+    if (!ok.length) return;
+    // Text is re-rendered from its settings (images aren't saved for text).
+    const layersBack = ok.map((l) => (l.type === "text" ? { ...l, rendered: "" } : l));
+    hist.current.auto.add(layersBack);
+    setLayers(layersBack);
+    if (garments.some((x) => x.slug === d!.garment)) setGarment(d.garment);
+    if (COLORS.some((c) => c.hex === d!.color)) setColor(d.color);
+    if (SIZES.includes(d.size)) setSize(d.size);
+    if (d.qty > 0) setQty(Math.min(500, d.qty));
+    setPanel("designs");
+    setRestored(true);
+  };
+  useEffect(() => {
+    if (!draftable || draftLoaded.current) return;
+    draftLoaded.current = true;
+    // Saved drafts only exist in the browser, so they're read after mount.
+    const t = setTimeout(() => restoreDraft(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!draftable || !draftLoaded.current) return;
+    const t = setTimeout(() => {
+      try {
+        if (!layers.length) return localStorage.removeItem(DRAFT_KEY);
+        const slim = layers.map((l) => (l.type === "text" ? { ...l, src: "" } : l));
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ garment, color, size, qty, layers: slim } satisfies Draft));
+      } catch {
+        // storage full (big uploads) or blocked — the draft is a convenience
+      }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [draftable, layers, garment, color, size, qty]);
+  const startOver = () => {
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {}
+    setLayers([]);
+    setSelected(null);
+    setRestored(false);
+    setPanel("add");
+  };
 
   const handleAdd = async () => {
     setStatus("adding");
@@ -479,6 +650,9 @@ export default function CustomizeStudio({
       });
       setStatus("added");
       setTimeout(() => setStatus("idle"), 2000);
+      try {
+        localStorage.removeItem(DRAFT_KEY);
+      } catch {}
     } catch (e) {
       setError((e as Error).message || "Something went wrong — please try again.");
       setStatus("error");
@@ -518,6 +692,27 @@ export default function CustomizeStudio({
     </button>
   );
 
+  // Phones: small pill on the pinned stage to switch between 3D and the flat guide.
+  const stageSwitch = (
+    <div className="lg:hidden absolute left-3 bottom-3 z-20 flex rounded-full bg-black/55 backdrop-blur p-1 text-[11px] font-semibold">
+      {(
+        [
+          ["3d", "3D", Box],
+          ["guide", "Guide", LayoutGrid],
+        ] as const
+      ).map(([id, label, Icon]) => (
+        <button
+          key={id}
+          onClick={() => setStage(id)}
+          aria-pressed={stage === id}
+          className={`flex items-center gap-1 rounded-full px-3 py-1.5 ${stage === id ? "bg-paper text-ink" : "text-paper/80"}`}
+        >
+          <Icon className="w-3.5 h-3.5" /> {label}
+        </button>
+      ))}
+    </div>
+  );
+
   const viewer = (dark: boolean) => (
     <div ref={viewerRef} className="absolute inset-0">
       <TShirtViewer
@@ -527,9 +722,11 @@ export default function CustomizeStudio({
         viewNonce={view.n}
         autoRotate={false}
         onReady={waitingForPrint ? undefined : markPreviewReady}
+        onSelectPrint={editorOpen ? selectLayer : undefined}
       />
       <PreviewCover dark={dark} hidden={previewReady} />
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 flex gap-1.5">
+      {/* Phones spin the shirt by dragging (and it turns to the chosen print area), so these are desktop-only */}
+      <div className="hidden lg:flex absolute top-4 left-1/2 -translate-x-1/2 gap-1.5">
         {(
           [
             ["front", "Front"],
@@ -644,7 +841,7 @@ export default function CustomizeStudio({
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
         <div className="grid lg:grid-cols-[1.15fr_1fr] gap-8 items-start">
-          <div className="relative rounded-[2rem] bg-white border border-line overflow-hidden h-[460px] sm:h-[600px] lg:sticky lg:top-24">
+          <div className="relative rounded-[2rem] bg-white border border-line overflow-hidden h-[52vh] min-h-80 max-h-[460px] sm:h-[600px] sm:max-h-none lg:sticky lg:top-24">
             <div className="absolute inset-0 grain opacity-60 pointer-events-none" />
             {viewer(false)}
           </div>
@@ -710,11 +907,37 @@ export default function CustomizeStudio({
 
             <div className="rounded-3xl bg-ink text-paper p-6">
               <div className="text-paper/70">{priceLines}</div>
-              <div className="mt-5 pt-5 border-t border-paper/10 flex flex-col">{addButton}</div>
+              <div className="hidden lg:flex mt-5 pt-5 border-t border-paper/10 flex-col">{addButton}</div>
               {error && <p className="text-xs text-red-300 mt-3 text-center">{error}</p>}
             </div>
           </div>
         </div>
+
+        {/* Phones: price, Customize and Add to cart stay in reach, above the tab bar */}
+        <div className="lg:hidden fixed inset-x-3 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-30 rounded-2xl border border-line bg-paper/95 backdrop-blur-xl shadow-lg px-3 py-2 flex items-center gap-2">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[11px] text-muted truncate">
+              {g.label} · {colorLabel(color)} · {size}
+            </span>
+            <span className="block font-display font-bold leading-tight">{formatPrice(unitPrice * qty)}</span>
+          </span>
+          <button
+            onClick={() => setEditorOpen(true)}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-full border border-ink/20 px-4 py-3 text-sm font-semibold"
+          >
+            <Pencil className="w-4 h-4" /> Customize
+          </button>
+          <button
+            onClick={handleAdd}
+            disabled={status === "adding"}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-full bg-ink text-lime px-4 py-3 text-sm font-semibold disabled:opacity-60"
+          >
+            {status === "adding" ? <Loader2 className="w-4 h-4 animate-spin" /> : status === "added" ? <Check className="w-4 h-4" /> : <ShoppingBag className="w-4 h-4" />}
+            {status === "added" ? "Added" : "Add"}
+          </button>
+        </div>
+        {/* Room for the buy bar */}
+        <div className="lg:hidden h-24" aria-hidden />
       </div>
     );
   }
@@ -740,26 +963,49 @@ export default function CustomizeStudio({
         <p className="hidden md:block font-display text-lg font-bold">
           Rad<span className="text-flame">.</span>Clo Studio
         </p>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {offGarment > 0 && (
-            <span className="hidden sm:inline-flex items-center gap-1 text-xs text-amber-300">
+            <span className="hidden xl:inline-flex items-center gap-1 text-xs text-amber-300">
               <AlertTriangle className="w-3.5 h-3.5" /> {offGarment} in an area we no longer print
             </span>
           )}
-          {addButton}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={undo}
+              disabled={!canUndo}
+              title="Undo (Ctrl/⌘ Z)"
+              aria-label="Undo"
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 disabled:opacity-30"
+            >
+              <Undo2 className="w-5 h-5" />
+            </button>
+            <button
+              onClick={redo}
+              disabled={!canRedo}
+              title="Redo (Ctrl/⌘ Shift Z)"
+              aria-label="Redo"
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 disabled:opacity-30"
+            >
+              <Redo2 className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="hidden lg:block">{addButton}</div>
         </div>
       </header>
       {error && <p className="text-xs text-red-300 text-center py-1">{error}</p>}
 
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid lg:grid-cols-[320px_1fr_minmax(380px,460px)]">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid content-start lg:content-stretch lg:grid-cols-[320px_1fr_minmax(380px,460px)]">
         {/* Tools */}
-        <aside className="order-3 lg:order-1 bg-paper text-ink flex flex-col lg:min-h-0">
+        <aside className="order-2 lg:order-1 bg-paper text-ink flex flex-col lg:min-h-0">
           {/* Three clear steps */}
-          <nav className="shrink-0 grid grid-cols-3 gap-1 p-2 border-b border-line bg-white" aria-label="Editor panels">
+          <nav
+            className="sticky top-[max(38vh,16rem)] lg:static z-10 shrink-0 grid grid-cols-3 gap-1 p-2 border-b border-line bg-white"
+            aria-label="Editor panels"
+          >
             {(
               [
                 ["add", "Add design", Plus, "Art or text"],
-                ["designs", "My designs", LayersIcon, layers.length ? `${layers.length} on shirt` : "None yet"],
+                ["designs", "Edit", LayersIcon, layers.length ? `${layers.length} design${layers.length === 1 ? "" : "s"}` : "Nothing yet"],
                 ["shirt", "Shirt & size", Shirt, `${size} · ${colorLabel(color)}`],
               ] as const
             ).map(([id, label, Icon, sub]) => (
@@ -784,6 +1030,19 @@ export default function CustomizeStudio({
           </nav>
 
           <div className="flex-1 lg:min-h-0 lg:overflow-y-auto p-5 space-y-5">
+            {restored && (
+              <div className="flex items-center justify-between gap-3 rounded-2xl bg-lime px-4 py-2.5 text-xs">
+                <span className="font-semibold">Welcome back — we kept your design.</span>
+                <span className="flex gap-3 shrink-0">
+                  <button onClick={() => setRestored(false)} className="font-semibold underline">
+                    OK
+                  </button>
+                  <button onClick={startOver} className="underline opacity-70">
+                    Start over
+                  </button>
+                </span>
+              </div>
+            )}
             {panel === "add" && (
               <>
                 {/* Where to print first, then what */}
@@ -956,7 +1215,12 @@ export default function CustomizeStudio({
                       return (
                         <li key={layer.id} className={`rounded-2xl border bg-white ${on ? "border-ink ring-1 ring-ink" : "border-line"}`}>
                           <div className="flex items-center gap-3 p-2 pr-2.5">
-                            <button onClick={() => selectLayer(layer.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
+                            {/* Tap to open this design's controls; tap again to close */}
+                            <button
+                              onClick={() => (on ? setSelected(null) : selectLayer(layer.id))}
+                              aria-expanded={on}
+                              className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                            >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={srcOf(layer)} alt="" className="w-12 h-12 rounded-xl object-contain bg-paper p-1 shrink-0" />
                               <span className="min-w-0">
@@ -969,60 +1233,52 @@ export default function CustomizeStudio({
                                   {loc ? `${loc.label} · ${areaSize(loc)}` : "Area not offered — move it"}
                                 </span>
                               </span>
+                              <ChevronDown className={`w-4 h-4 ml-auto shrink-0 text-muted transition-transform ${on ? "rotate-180" : ""}`} />
                             </button>
                             <button onClick={() => removeLayer(layer.id)} className="p-2 rounded-full text-muted hover:text-red-600 hover:bg-red-50" aria-label="Remove design">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
-
-                          {on && layer.type === "text" && (
-                            <div className="border-t border-line p-3 space-y-2.5">
-                              <textarea
-                                value={layer.text}
-                                onChange={(e) => updateLayer(layer.id, { text: e.target.value.slice(0, 80) })}
-                                rows={2}
-                                className="w-full rounded-xl border border-line bg-white px-3 py-2 font-semibold focus:outline-none focus:border-ink resize-none"
-                              />
-                              <div className="flex gap-1 flex-wrap">
-                                {TEXT_FONTS.map((f) => (
-                                  <button
-                                    key={f.id}
-                                    onClick={() => updateLayer(layer.id, { fontId: f.id })}
-                                    className={`px-3 py-1.5 rounded-full text-sm border ${
-                                      layer.fontId === f.id ? "bg-ink text-paper border-ink" : "bg-white border-line"
-                                    }`}
-                                    style={{ fontFamily: f.preview }}
-                                  >
-                                    {f.label}
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="flex gap-1.5">
-                                {TEXT_COLORS.map((c) => (
-                                  <button
-                                    key={c}
-                                    onClick={() => updateLayer(layer.id, { color: c })}
-                                    aria-label={`Text colour ${c}`}
-                                    className={`w-7 h-7 rounded-full border border-black/15 ${layer.color === c ? "ring-2 ring-ink ring-offset-2" : ""}`}
-                                    style={{ backgroundColor: c }}
-                                  />
-                                ))}
-                              </div>
+                          {on && sel && (
+                            <div className="border-t border-line p-4">
+                              <SelectedDesign
+                              embedded
+                      key={sel.id}
+                      name={nameOf(sel)}
+                      src={srcOf(sel)}
+                      layer={sel}
+                      area={selPiece}
+                      locations={locations}
+                      areaPrices={pricing.location}
+                      designPrice={selDesignPrice}
+                      shirtColor={color}
+                      canForward={layers.indexOf(sel) < layers.length - 1}
+                      canBack={layers.indexOf(sel) > 0}
+                      onArea={(l) => moveToArea(sel, l)}
+                      onBox={(box) => updateLayer(sel.id, { box })}
+                      onText={(text) => updateLayer(sel.id, { text } as Partial<Layer>)}
+                      onStyle={(patch) =>
+                        sel.type === "text" && updateLayer(sel.id, { style: { ...sel.style, ...patch } } as Partial<Layer>)
+                      }
+                      onForward={() => reorderLayer(sel.id, 1)}
+                      onBack={() => reorderLayer(sel.id, -1)}
+                      onDuplicate={() => duplicateLayer(sel)}
+                      onRemove={() => removeLayer(sel.id)}
+                    />
                             </div>
                           )}
                         </li>
                       );
                     })}
                   </ul>
-                  <p className="text-[11px] text-muted text-center">
-                    Tap a design to select it, then move, resize or change its print area on the position guide.
-                  </p>
+                  {!sel && <p className="text-xs text-muted text-center">Tap a design to edit it.</p>}
                   <button
                     onClick={() => setPanel("add")}
-                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-ink/30 text-sm font-semibold py-3 rounded-2xl hover:border-ink"
+                    className="w-full flex items-center justify-center gap-1.5 border border-dashed border-ink/30 text-sm font-semibold py-2.5 rounded-2xl hover:border-ink"
                   >
                     <Plus className="w-4 h-4" /> Add another design
                   </button>
+
                 </>
               ))}
 
@@ -1030,7 +1286,7 @@ export default function CustomizeStudio({
           </div>
 
           {/* What you're buying, always visible */}
-          <details className="group shrink-0 border-t border-line bg-white">
+          <details className="group shrink-0 border-t border-line bg-white hidden lg:block">
             <summary className="flex items-center gap-3 px-5 py-3.5 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
               <span className="w-8 h-8 rounded-full border border-black/15 shrink-0" style={{ backgroundColor: color }} />
               <span className="min-w-0 flex-1">
@@ -1054,11 +1310,25 @@ export default function CustomizeStudio({
         </aside>
 
         {/* 3D */}
-        <section className="order-1 lg:order-2 relative h-[48vh] lg:h-auto min-h-80">{viewer(true)}</section>
+        {/* Phones: the stage stays pinned at the top while the tools scroll */}
+        <section
+          className={`order-1 lg:order-2 sticky top-0 z-20 lg:relative lg:z-auto h-[38vh] min-h-64 lg:h-auto lg:min-h-0 bg-[#141414] ${
+            stage === "3d" ? "" : "hidden lg:block"
+          }`}
+        >
+          {viewer(true)}
+          {stageSwitch}
+        </section>
 
         {/* Position guide */}
-        <aside className="order-2 lg:order-3 bg-white text-ink lg:overflow-y-auto p-5">
-          <p className="text-center text-xs font-bold uppercase tracking-[0.25em] text-muted mb-4">Position guide</p>
+        <aside
+          className={`order-1 lg:order-3 sticky top-0 z-20 lg:static h-[38vh] min-h-64 lg:h-auto lg:min-h-0 bg-white text-ink overflow-hidden lg:overflow-y-auto p-3 lg:p-5 ${
+            stage === "guide" ? "" : "hidden lg:block"
+          }`}
+        >
+          <p className="hidden lg:block text-center text-xs font-bold uppercase tracking-[0.25em] text-muted mb-4">Position guide</p>
+          {/* On phones the guide shrinks to fit the pinned stage */}
+          <div className="mx-auto lg:max-w-none max-w-[calc((38vh-1.5rem)*0.99)] lg:max-h-none">
           <PositionGuide
             locations={locations}
             color={color}
@@ -1068,44 +1338,41 @@ export default function CustomizeStudio({
             onSelect={selectLayer}
             onChange={(id, box) => updateLayer(id, { box })}
             onAspect={(id, aspect) =>
-              setLayers((prev) =>
+              setLayersSilently((prev) =>
                 prev.map((l) => (l.id === id && Math.abs(l.aspect - aspect) > 0.001 ? refit({ ...l, aspect } as Layer) : l))
               )
             }
           />
-          <p className="text-[11px] text-muted text-center mt-3">
-            {sel ? "Drag to move · drag a corner to resize" : "Tap a design on the shirt to adjust it"}
+          </div>
+          <div className="lg:hidden">{stageSwitch}</div>
+          <p className="hidden lg:block text-[11px] text-muted text-center mt-3">
+            {sel ? "Drag to move · drag a corner to resize · edit it in the Edit tab" : "Tap a design to edit it"}
           </p>
 
-          {sel ? (
-            <SelectedDesign
-              key={sel.id}
-              name={nameOf(sel)}
-              src={srcOf(sel)}
-              layer={sel}
-              area={selPiece}
-              locations={locations}
-              areaPrices={pricing.location}
-              designPrice={selDesignPrice}
-              onArea={(l) => moveToArea(sel, l)}
-              onBox={(box) => updateLayer(sel.id, { box })}
-              onDuplicate={() => duplicateLayer(sel)}
-              onRemove={() => removeLayer(sel.id)}
-            />
-          ) : (
-            <div className="mt-5 pt-5 border-t border-line">
-              <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
-              <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
-            </div>
-          )}
+          <div className="hidden lg:block mt-5 pt-5 border-t border-line">
+            <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
+            <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
+          </div>
         </aside>
+      </div>
+      {/* Phones: price and Add to cart always in reach */}
+      <div className="lg:hidden shrink-0 flex items-center gap-3 border-t border-white/10 bg-[#141414] px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs text-paper/60 truncate">
+            {g.label} · {colorLabel(color)} · {size}
+            {qty > 1 && ` × ${qty}`}
+          </span>
+          <span className="block font-display font-bold">{formatPrice(unitPrice * qty)}</span>
+        </span>
+        {addButton}
       </div>
     </div>
   );
 }
 
-/** Controls for the design selected on the position guide. */
+/** Everything for the selected design: text & style (for text), print area, size, rotation and order. */
 function SelectedDesign({
+  embedded,
   name,
   src,
   layer,
@@ -1113,11 +1380,20 @@ function SelectedDesign({
   locations,
   areaPrices,
   designPrice,
+  shirtColor,
+  canForward,
+  canBack,
   onArea,
   onBox,
+  onText,
+  onStyle,
+  onForward,
+  onBack,
   onDuplicate,
   onRemove,
 }: {
+  /** Shown inside its list card: no own header or frame */
+  embedded?: boolean;
   name: string;
   src: string;
   layer: Layer;
@@ -1125,8 +1401,15 @@ function SelectedDesign({
   locations: PrintLocation[];
   areaPrices: Record<string, number>;
   designPrice: number;
+  shirtColor: string;
+  canForward: boolean;
+  canBack: boolean;
   onArea: (l: PrintLocation) => void;
   onBox: (b: GuideBox) => void;
+  onText: (t: string) => void;
+  onStyle: (patch: Partial<TextStyle>) => void;
+  onForward: () => void;
+  onBack: () => void;
   onDuplicate: () => void;
   onRemove: () => void;
 }) {
@@ -1148,39 +1431,50 @@ function SelectedDesign({
     ["Medium", 0.75],
     ["Fill", 1],
   ];
+  const actions = [
+    ["Centre", Crosshair, () => area && onBox({ ...b, cx: area.rect.x + area.rect.w / 2 }), false, false],
+    ["Forward", ArrowUpToLine, onForward, false, !canForward],
+    ["Back", ArrowDownToLine, onBack, false, !canBack],
+    ["Copy", Copy, onDuplicate, false, false],
+    ...(embedded ? [] : ([["Delete", Trash2, onRemove, true, false]] as const)),
+  ] as const;
 
   return (
-    <div className="mt-5 pt-5 border-t border-line space-y-5">
-      {/* What's selected, in one line */}
-      <div className="flex items-center gap-3">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt="" className="w-12 h-12 rounded-xl object-contain bg-paper p-1 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold truncate">{name}</p>
-          <p className="text-xs text-muted">
-            {area ? `${area.label} · ${wIn.toFixed(1)}″ × ${hIn.toFixed(1)}″ · ${where}` : "Pick a print area below"}
-          </p>
+    <div className={embedded ? "space-y-5" : "rounded-2xl bg-white border border-line p-4 space-y-5"}>
+      {embedded ? (
+        <p className="text-xs text-muted">
+          {area ? `${wIn.toFixed(1)}″ × ${hIn.toFixed(1)}″ · ${where}` : "Pick a print area below"}
+        </p>
+      ) : (
+        <div className="flex items-center gap-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="" className="w-12 h-12 rounded-xl object-contain bg-paper p-1 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold truncate">{name}</p>
+            <p className="text-xs text-muted">
+              {area ? `${area.label} · ${wIn.toFixed(1)}″ × ${hIn.toFixed(1)}″ · ${where}` : "Pick a print area below"}
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="grid grid-cols-3 gap-1.5">
-        {(
-          [
-            ["Centre", Crosshair, () => area && onBox({ ...b, cx: area.rect.x + area.rect.w / 2 }), false],
-            ["Duplicate", Copy, onDuplicate, false],
-            ["Remove", Trash2, onRemove, true],
-          ] as const
-        ).map(([label, Icon, run, danger]) => (
+      )}
+      <div className={`grid gap-1.5 ${actions.length === 5 ? "grid-cols-5" : "grid-cols-4"}`}>
+        {actions.map(([label, Icon, run, danger, disabled]) => (
           <button
             key={label}
             onClick={run}
-            className={`flex items-center justify-center gap-1.5 rounded-xl border border-line py-2 text-xs font-semibold transition-colors ${
+            disabled={disabled}
+            className={`flex flex-col items-center gap-1 rounded-xl border border-line py-2 text-[11px] font-semibold transition-colors disabled:opacity-35 ${
               danger ? "text-red-600 hover:bg-red-50 hover:border-red-200" : "hover:border-ink"
             }`}
           >
-            <Icon className="w-3.5 h-3.5" /> {label}
+            <Icon className="w-4 h-4" /> {label}
           </button>
         ))}
       </div>
+
+      {layer.type === "text" && (
+        <TextControls text={layer.text} style={layer.style} shirtColor={shirtColor} onText={onText} onStyle={onStyle} />
+      )}
 
       {/* Print area — numbers match the badges on the guide */}
       <div>
@@ -1205,7 +1499,7 @@ function SelectedDesign({
                   {PRINT_AREA_NUMBER(l)}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-xs font-semibold truncate">{l.label}</span>
+                  <span className="block text-xs font-semibold leading-tight">{l.label}</span>
                   <span className={`block text-[11px] ${on ? "text-paper/60" : "text-muted"}`}>
                     {areaSize(l)} · +{formatPrice(areaPrices[l.id] ?? 0)}
                   </span>
@@ -1279,6 +1573,246 @@ function SelectedDesign({
         </p>
       )}
     </div>
+  );
+}
+
+/** Text, font, colour, outline, curve, spacing, alignment and shadow for a text design. */
+function TextControls({
+  text,
+  style,
+  shirtColor,
+  onText,
+  onStyle,
+}: {
+  text: string;
+  style: TextStyle;
+  shirtColor: string;
+  onText: (t: string) => void;
+  onStyle: (patch: Partial<TextStyle>) => void;
+}) {
+  // The group being browsed; otherwise the current font's group (so undo shows the right one).
+  const [browsing, setGroup] = useState<(typeof FONT_GROUPS)[number] | null>(null);
+  const group = browsing ?? fontById(style.fontId).group;
+  const multiLine = text.split("\n").filter((l) => l.trim()).length > 1;
+  const hard = lowContrast(style, shirtColor);
+  const better = readableOn(shirtColor);
+
+  return (
+    <div className="space-y-4 border-t border-line pt-4">
+      <textarea
+        value={text}
+        onChange={(e) => onText(e.target.value.slice(0, 80))}
+        rows={2}
+        placeholder="Your text (Enter for a new line)"
+        className="w-full rounded-xl border border-line bg-white px-3 py-2 text-lg leading-snug focus:outline-none focus:border-ink resize-none"
+        style={{ fontFamily: fontPreview(fontById(style.fontId)) }}
+      />
+
+      {hard && (
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+          <span>Hard to read on this shirt colour.</span>
+          <button onClick={() => onStyle({ color: better })} className="shrink-0 font-semibold underline">
+            Use {better === "#ffffff" ? "white" : "black"}
+          </button>
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2">Font</p>
+        <div className="flex flex-wrap gap-1 mb-2">
+          {FONT_GROUPS.map((gName) => (
+            <button
+              key={gName}
+              onClick={() => setGroup(gName)}
+              className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                group === gName ? "bg-ink text-paper" : "bg-paper hover:bg-line"
+              }`}
+            >
+              {gName}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {TEXT_FONTS.filter((f) => f.group === group).map((f) => (
+            <button
+              key={f.id}
+              onClick={() => {
+                onStyle({ fontId: f.id });
+                setGroup(null);
+              }}
+              className={`rounded-xl border px-2 py-2.5 text-[15px] leading-none truncate ${
+                style.fontId === f.id ? "bg-ink text-paper border-ink" : "bg-white border-line hover:border-ink/40"
+              }`}
+              style={{ fontFamily: fontPreview(f), fontWeight: f.weight }}
+              title={f.label}
+            >
+              {group === "Nepali" ? f.label.split(" ")[0] : f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <ColorRow label="Colour" value={style.color} onChange={(color) => onStyle({ color })} />
+
+      <div>
+        <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2">Outline</p>
+        <div className="grid grid-cols-3 gap-1.5">
+          {(
+            [
+              [0, "None"],
+              [1, "Thin"],
+              [2, "Thick"],
+            ] as const
+          ).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => onStyle({ outline: v })}
+              className={`rounded-xl border py-2 text-xs font-semibold ${
+                style.outline === v ? "bg-ink text-paper border-ink" : "border-line hover:border-ink/40"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {style.outline > 0 && (
+          <div className="mt-2.5">
+            <ColorRow label="Outline colour" value={style.outlineColor} onChange={(outlineColor) => onStyle({ outlineColor })} small />
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between mb-1.5">
+          <p className="text-xs font-bold uppercase tracking-widest text-muted">Curve</p>
+          <button onClick={() => onStyle({ curve: 0 })} className="text-[11px] text-muted hover:text-ink">
+            {style.curve === 0 ? "Straight" : `${style.curve > 0 ? "Arch up" : "Arch down"} · reset`}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <CurveIcon dir={-1} />
+          <input
+            type="range"
+            min={-100}
+            max={100}
+            step={5}
+            value={style.curve}
+            onChange={(e) => onStyle({ curve: Number(e.target.value) })}
+            aria-label="Curve"
+            className="flex-1 accent-ink"
+          />
+          <CurveIcon dir={1} />
+        </div>
+      </div>
+
+      <details className="group">
+        <summary className="flex items-center justify-between cursor-pointer list-none text-xs font-bold uppercase tracking-widest text-muted [&::-webkit-details-marker]:hidden">
+          More text options
+          <ChevronDown className="w-4 h-4 transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-4 pt-3">
+          <label className="block">
+            <span className="flex justify-between text-xs text-muted mb-1">
+              <span>Letter spacing</span>
+              <span>{style.spacing}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={60}
+              step={2}
+              value={style.spacing}
+              onChange={(e) => onStyle({ spacing: Number(e.target.value) })}
+              className="w-full accent-ink"
+            />
+          </label>
+          {multiLine && (
+            <>
+              <label className="block">
+                <span className="flex justify-between text-xs text-muted mb-1">
+                  <span>Line spacing</span>
+                  <span>{style.lineHeight.toFixed(2)}</span>
+                </span>
+                <input
+                  type="range"
+                  min={0.8}
+                  max={1.8}
+                  step={0.05}
+                  value={style.lineHeight}
+                  onChange={(e) => onStyle({ lineHeight: Number(e.target.value) })}
+                  className="w-full accent-ink"
+                />
+              </label>
+              {style.curve === 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted">Align</span>
+                  <div className="flex gap-1">
+                    {(
+                      [
+                        ["left", AlignLeft],
+                        ["center", AlignCenter],
+                        ["right", AlignRight],
+                      ] as const
+                    ).map(([v, Icon]) => (
+                      <button
+                        key={v}
+                        onClick={() => onStyle({ align: v })}
+                        aria-label={`Align ${v}`}
+                        className={`w-9 h-9 rounded-xl border flex items-center justify-center ${
+                          style.align === v ? "bg-ink text-paper border-ink" : "border-line hover:border-ink/40"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          <label className="flex items-center justify-between cursor-pointer">
+            <span className="text-xs text-muted">Drop shadow</span>
+            <input type="checkbox" checked={style.shadow} onChange={(e) => onStyle({ shadow: e.target.checked })} className="w-4 h-4 accent-ink" />
+          </label>
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function ColorRow({ label, value, onChange, small }: { label: string; value: string; onChange: (c: string) => void; small?: boolean }) {
+  const custom = !TEXT_COLORS.includes(value);
+  return (
+    <div>
+      <p className={`text-xs ${small ? "text-muted" : "font-bold uppercase tracking-widest text-muted"} mb-2`}>{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {TEXT_COLORS.map((c) => (
+          <button
+            key={c}
+            onClick={() => onChange(c)}
+            aria-label={`${label} ${c}`}
+            className={`w-7 h-7 rounded-full border border-black/15 ${value === c ? "ring-2 ring-ink ring-offset-2" : ""}`}
+            style={{ backgroundColor: c }}
+          />
+        ))}
+        {/* Any colour */}
+        <label
+          className={`relative w-7 h-7 rounded-full border border-black/15 cursor-pointer overflow-hidden ${custom ? "ring-2 ring-ink ring-offset-2" : ""}`}
+          style={{ background: custom ? value : "conic-gradient(red, yellow, lime, cyan, blue, magenta, red)" }}
+          title="Pick any colour"
+        >
+          <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" aria-label={`${label}: any colour`} />
+        </label>
+      </div>
+    </div>
+  );
+}
+
+function CurveIcon({ dir }: { dir: 1 | -1 }) {
+  return (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 text-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      <path d={dir > 0 ? "M3 16 Q12 4 21 16" : "M3 8 Q12 20 21 8"} />
+    </svg>
   );
 }
 

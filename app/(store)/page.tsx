@@ -143,7 +143,7 @@ export default async function Home() {
       </section>
 
       {/* ── FAQ ── */}
-      <section id="faq" className="max-w-7xl mx-auto px-6 pb-24 scroll-mt-20 grid lg:grid-cols-[0.8fr_1.2fr] gap-10">
+      <section id="faq" className="max-w-7xl mx-auto px-6 pb-24 scroll-mt-20 grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[0.8fr_1.2fr] gap-10">
         <div>
           <Heading eyebrow="FAQ" title={<>Good<br />questions.</>} bare />
           <div className="mt-8 rounded-[28px] bg-white ring-1 ring-black/5 p-6">

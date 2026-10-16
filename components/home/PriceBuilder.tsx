@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Minus, Plus } from "lucide-react";
+import { ArrowRight, Minus, Plus, Users } from "lucide-react";
+import { PrintAreaPicker, PrintAreasLegend } from "@/components/PrintAreas";
 import {
   formatPrice,
   shippingFor,
@@ -11,16 +12,6 @@ import {
   FREE_SHIPPING_FROM,
   type Pricing,
 } from "@/lib/garments";
-
-const TEE = "M40,34 L74,10 Q100,0 126,10 L160,34 L192,66 L172,86 L154,68 L154,232 L46,232 L46,68 L28,86 L8,66 Z";
-
-// Clickable print areas on the two mini tees (front at x=0, back at x=220).
-const HOTSPOTS: Record<string, { x: number; y: number; w: number; h: number; side: 0 | 1 }> = {
-  front: { x: 62, y: 46, w: 76, h: 96, side: 0 },
-  "left-sleeve": { x: 160, y: 46, w: 22, h: 22, side: 0 },
-  "right-sleeve": { x: 18, y: 46, w: 22, h: 22, side: 0 },
-  back: { x: 62, y: 40, w: 76, h: 96, side: 1 },
-};
 
 /** Animated number that counts toward its target. */
 function useCountUp(target: number) {
@@ -58,7 +49,7 @@ export default function PriceBuilder({ pricing }: { pricing: Pricing }) {
   const shown = useCountUp(total);
 
   return (
-    <div className="grid lg:grid-cols-[1.15fr_1fr] gap-4">
+    <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[1.15fr_1fr] gap-4">
       {/* Builder */}
       <div className="rounded-[32px] bg-white ring-1 ring-black/5 p-6 sm:p-8">
         <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted">1 · Garment</p>
@@ -76,73 +67,15 @@ export default function PriceBuilder({ pricing }: { pricing: Pricing }) {
           ))}
         </div>
 
-        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted mt-8">2 · Tap where to print</p>
-        <svg viewBox="0 0 420 250" className="w-full max-w-lg mt-3 select-none" role="group" aria-label="Print areas">
-          {[0, 1].map((side) => (
-            <g key={side} transform={`translate(${side * 220},0)`}>
-              <path d={TEE} fill="#eef2f7" stroke="#11111126" strokeWidth="2" strokeLinejoin="round" />
-              <path d={side ? "M82,12 Q100,20 118,12" : "M82,12 Q100,34 118,12"} fill="none" stroke="#11111133" strokeWidth="2" />
-              <text x="100" y="222" textAnchor="middle" fontSize="11" fontWeight="800" fill="#11111166" letterSpacing="2">
-                {side ? "BACK" : "FRONT"}
-              </text>
-            </g>
-          ))}
-          {locations.map((loc) => {
-            const h = HOTSPOTS[loc.id];
-            if (!h) return null;
-            const on = areas.includes(loc.id);
-            return (
-              <g
-                key={loc.id}
-                transform={`translate(${h.side * 220},0)`}
-                onClick={() => toggle(loc.id)}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), toggle(loc.id))}
-                role="checkbox"
-                aria-checked={on}
-                aria-label={`${loc.label} print, ${formatPrice(pricing.location[loc.id])}`}
-                tabIndex={0}
-                className="cursor-pointer outline-none group"
-              >
-                <rect
-                  x={h.x}
-                  y={h.y}
-                  width={h.w}
-                  height={h.h}
-                  rx="6"
-                  fill={on ? "#d4ff3a" : "#ffffff"}
-                  stroke={on ? "#111" : "#11111155"}
-                  strokeWidth="2"
-                  strokeDasharray={on ? "0" : "5 4"}
-                  className="transition-all group-hover:stroke-[#111] group-focus-visible:stroke-[#2f6bff]"
-                />
-                <text
-                  x={h.x + h.w / 2}
-                  y={h.y + h.h / 2}
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  fontSize={h.w > 40 ? 22 : 13}
-                  fontWeight="900"
-                  fill="#111"
-                  className="pointer-events-none"
-                >
-                  {on ? "✓" : "+"}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-        <div className="flex flex-wrap gap-2 mt-2">
-          {locations.map((l) => (
-            <button
-              key={l.id}
-              onClick={() => toggle(l.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ring-1 transition-colors ${
-                areas.includes(l.id) ? "bg-lime ring-ink" : "ring-ink/15 text-ink/60 hover:text-ink"
-              }`}
-            >
-              {l.label} +{formatPrice(pricing.location[l.id])}
-            </button>
-          ))}
+        <div className="flex items-baseline justify-between gap-3 mt-8">
+          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted">2 · Tap where to print</p>
+          <p className="text-[11px] text-muted">{areas.length} area{areas.length === 1 ? "" : "s"} picked</p>
+        </div>
+        <div className="grid sm:grid-cols-[1.15fr_1fr] gap-4 mt-3 items-start">
+          <div className="rounded-2xl bg-paper p-3">
+            <PrintAreaPicker locations={locations} selected={areas} onToggle={toggle} prices={pricing.location} />
+          </div>
+          <PrintAreasLegend locations={locations} prices={pricing.location} used={areas} onToggle={toggle} columns={1} />
         </div>
 
         <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted mt-8">3 · Quantity</p>
@@ -189,6 +122,17 @@ export default function PriceBuilder({ pricing }: { pricing: Pricing }) {
             : "You get free shipping."}{" "}
           Store designs add their own price.
         </p>
+        {qty >= 20 && (
+          <Link
+            href="/contact#quote"
+            className="relative mt-4 flex items-center gap-2 rounded-2xl bg-white/10 px-4 py-3 text-sm hover:bg-white/15 transition-colors"
+          >
+            <Users className="w-4 h-4 text-lime shrink-0" />
+            <span>
+              Ordering {qty}? <span className="font-semibold underline">Get a bulk quote</span> — tiered pricing for teams & events.
+            </span>
+          </Link>
+        )}
         <Link
           href={`/customize?garment=${garment}`}
           className="relative group mt-auto pt-8 inline-flex"

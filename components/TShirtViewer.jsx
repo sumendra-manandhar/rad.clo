@@ -120,7 +120,7 @@ function useDecalTexture(src) {
 // panels are stored Z-up and stood upright by a -90° parent rotation, so a
 // decal attached anywhere else misses that rotation and lies flat under the
 // shirt.
-function PrintDecal({ src, placement, onLoaded }) {
+function PrintDecal({ src, placement, onLoaded, onSelect, order = 0 }) {
   const texture = useDecalTexture(src);
   useEffect(() => {
     if (texture) onLoaded(src);
@@ -145,6 +145,8 @@ function PrintDecal({ src, placement, onLoaded }) {
             rotation={rotation}
             scale={[fit[0] * unit, fit[1] * unit, placement.depth * unit]}
             texture={texture}
+            order={order}
+            onSelect={onSelect}
           />
         </DecalBoundary>,
         mesh
@@ -153,10 +155,21 @@ function PrintDecal({ src, placement, onLoaded }) {
   ));
 }
 
-function PanelDecal({ mesh, position, rotation, scale, texture }) {
+function PanelDecal({ mesh, position, rotation, scale, texture, order, onSelect }) {
   const meshRef = useMemo(() => ({ current: mesh }), [mesh]);
+  // Later prints draw on top of earlier ones; tapping a print selects it.
+  const events = onSelect
+    ? {
+        onClick: (e) => {
+          e.stopPropagation();
+          onSelect();
+        },
+        onPointerOver: () => (document.body.style.cursor = "pointer"),
+        onPointerOut: () => (document.body.style.cursor = ""),
+      }
+    : {};
   return (
-    <Decal mesh={meshRef} position={position} rotation={rotation} scale={scale}>
+    <Decal mesh={meshRef} position={position} rotation={rotation} scale={scale} renderOrder={1 + order} {...events}>
       <meshStandardMaterial
         map={texture}
         transparent
@@ -203,7 +216,7 @@ const SPIN_SECONDS = 1.1;
 const TURN = Math.PI * 2;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway }) {
+function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
   const group = useRef();
 
   // One full turn each time `spin` changes. onSpinHalfway fires when the back
@@ -381,7 +394,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
             };
           });
 
-        return { key: print.id ?? print.location, src: print.src, placement: { width, depth, panels: panelPlacements } };
+        return { key: print.id ?? print.location, id: print.id, src: print.src, placement: { width, depth, panels: panelPlacements } };
       })
       .filter(Boolean);
   }, [prints, panels, rootBox, cloned]);
@@ -398,8 +411,15 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
         // position computed from the model center so the model stays fixed
         position={[-center.x * scale, -center.y * scale, -center.z * scale]}
       />
-      {placements.map((p) => (
-        <PrintDecal key={`${p.key}:${p.src.slice(-40)}`} src={p.src} placement={p.placement} onLoaded={markLoaded} />
+      {placements.map((p, i) => (
+        <PrintDecal
+          key={`${p.key}:${p.src.slice(-40)}`}
+          src={p.src}
+          placement={p.placement}
+          onLoaded={markLoaded}
+          order={i}
+          onSelect={onSelectPrint && p.id ? () => onSelectPrint(p.id) : undefined}
+        />
       ))}
     </group>
   );
@@ -480,6 +500,7 @@ export default function TShirtViewer({
   onReady,
   spin,
   onSpinHalfway,
+  onSelectPrint,
 }) {
   // Keep a stable ref to OrbitControls so we can set a fixed target once.
   // This prevents the camera from re-centering when the model or materials
@@ -575,6 +596,7 @@ export default function TShirtViewer({
           onReady={onReady}
           spin={spin}
           onSpinHalfway={onSpinHalfway}
+          onSelectPrint={onSelectPrint}
         />
       </Suspense>
 

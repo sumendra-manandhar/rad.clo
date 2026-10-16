@@ -34,7 +34,7 @@ export default function ChatButtons() {
   ].filter((c) => c.href);
 
   return (
-    <div className="fixed right-4 bottom-4 sm:right-6 sm:bottom-6 z-30 flex flex-col items-end gap-2">
+    <div className="fixed right-4 bottom-[calc(5rem+env(safe-area-inset-bottom))] md:right-6 md:bottom-6 z-30 flex flex-col items-end gap-2">
       {open &&
         channels.map(({ href, label, Icon, cls }) => (
           <a

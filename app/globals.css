@@ -65,3 +65,16 @@ body {
     animation: none;
   }
 }
+
+/* App feel on touch screens: no grey tap flash, no double-tap zoom delay. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+a,
+button,
+[role="button"],
+input,
+select,
+label {
+  touch-action: manipulation;
+}
