@@ -13,16 +13,18 @@ export default function OrdersManager({
   orders,
   initialStatus,
   initialOpen,
+  initialQuery,
 }: {
   orders: Order[];
   initialStatus?: string;
   initialOpen?: string;
+  initialQuery?: string;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState<string>(
     initialStatus && ORDER_STATUSES.includes(initialStatus as OrderStatus) ? initialStatus : "all"
   );
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(initialQuery ?? "");
   const [open, setOpen] = useState<string | null>(initialOpen ?? null);
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -31,6 +33,7 @@ export default function OrdersManager({
       (status === "all" || o.status === status) &&
       (!q ||
         String(o.number).includes(q) ||
+        (o.trackCode ?? "").toLowerCase().includes(q.toLowerCase().trim()) ||
         o.customer.name.toLowerCase().includes(q.toLowerCase()) ||
         o.customer.phone.includes(q))
   );
@@ -56,7 +59,7 @@ export default function OrdersManager({
       <div className="flex flex-wrap gap-3 mb-6">
         <div className="relative flex-1 min-w-48">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order #, name or phone" className={`${inputCls} pl-10`} />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Order #, tracking ID, name or phone" className={`${inputCls} pl-10`} />
         </div>
         <div className="flex gap-1 bg-white border border-line rounded-xl p-1 overflow-x-auto">
           {["all", ...ORDER_STATUSES].map((s) => (
@@ -80,7 +83,10 @@ export default function OrdersManager({
             return (
               <li key={o.id} className="rounded-2xl bg-white border border-line overflow-hidden">
                 <button onClick={() => setOpen(isOpen ? null : o.id)} className="w-full flex items-center gap-4 p-4 text-left hover:bg-paper/60">
-                  <span className="font-mono font-semibold">#{o.number}</span>
+                  <span className="flex flex-col">
+                    <span className="font-mono font-semibold">#{o.number}</span>
+                    {o.trackCode && <span className="font-mono text-[10px] text-muted">{o.trackCode}</span>}
+                  </span>
                   <span className="flex-1 min-w-0">
                     <span className="block text-sm font-medium truncate">{o.customer.name}</span>
                     <span className="block text-xs text-muted">
@@ -179,7 +185,19 @@ export default function OrdersManager({
 
                     <div className="space-y-4 text-sm">
                       <div className="rounded-xl bg-paper p-4 space-y-2">
-                        <p className="font-semibold">{o.customer.name}</p>
+                        <p className="font-semibold">
+                          {o.customer.name}
+                          {o.userId && (
+                            <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wider bg-white rounded-full px-2 py-0.5">
+                              Google account
+                            </span>
+                          )}
+                        </p>
+                        {o.trackCode && (
+                          <a href={`/track/${o.trackCode}`} target="_blank" className="block text-xs font-mono underline">
+                            Tracking page · {o.trackCode}
+                          </a>
+                        )}
                         <a href={`tel:${o.customer.phone}`} className="flex items-center gap-2 hover:underline">
                           <Phone className="w-3.5 h-3.5" /> {o.customer.phone}
                         </a>

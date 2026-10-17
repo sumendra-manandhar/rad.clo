@@ -11,6 +11,7 @@ import {
   type Design,
   type Order,
   type OrderStatus,
+  type Profile,
   type Quote,
   type QuoteStatus,
   type Settings,
@@ -33,6 +34,7 @@ import { SEED_CATEGORIES, SEED_DESIGNS } from "@/lib/server/seed";
 export type NewDesign = Omit<Design, "id" | "createdAt" | "slug"> & { slug?: string };
 export type NewCategory = Omit<Category, "id" | "createdAt">;
 export type NewOrder = Omit<Order, "id" | "createdAt" | "number" | "status">;
+export type ProfileInput = Omit<Profile, "createdAt" | "updatedAt">;
 export type NewQuote = Omit<Quote, "id" | "createdAt" | "status" | "note">;
 export type QuotePatch = { status?: QuoteStatus; note?: string };
 
@@ -49,8 +51,15 @@ interface Store {
   deleteDesign(id: string): Promise<boolean>;
 
   listOrders(): Promise<Order[]>;
+  listOrdersForUser(userId: string): Promise<Order[]>;
+  getOrderByTrackCode(code: string): Promise<Order | null>;
   createOrder(input: NewOrder): Promise<Order>;
   updateOrder(id: string, patch: { status?: OrderStatus; note?: string }): Promise<Order | null>;
+
+  getProfile(id: string): Promise<Profile | null>;
+  /** Creates or updates a profile; fields left undefined keep their saved value */
+  saveProfile(p: ProfileInput): Promise<Profile>;
+  listProfiles(): Promise<Profile[]>;
 
   listQuotes(): Promise<Quote[]>;
   createQuote(input: NewQuote): Promise<Quote>;
@@ -79,7 +88,14 @@ const byCreatedDesc = <T extends { createdAt: string }>(a: T, b: T) =>
   b.createdAt.localeCompare(a.createdAt);
 
 // ── Local JSON driver ───────────────────────────────────────────────────────
-type DB = { categories: Category[]; designs: Design[]; orders: Order[]; quotes?: Quote[]; settings?: Settings };
+type DB = {
+  categories: Category[];
+  designs: Design[];
+  orders: Order[];
+  quotes?: Quote[];
+  profiles?: Profile[];
+  settings?: Settings;
+};
 
 const EMPTY_SETTINGS: Settings = {
   garmentPrices: {},
@@ -209,6 +225,33 @@ class LocalStore implements Store {
   async listOrders() {
     return (await this.read()).orders.sort(byCreatedDesc);
   }
+  async listOrdersForUser(userId: string) {
+    return (await this.listOrders()).filter((o) => o.userId === userId);
+  }
+  async getOrderByTrackCode(code: string) {
+    return (await this.read()).orders.find((o) => o.trackCode === code) ?? null;
+  }
+  async getProfile(id: string) {
+    return (await this.read()).profiles?.find((p) => p.id === id) ?? null;
+  }
+  saveProfile(input: ProfileInput) {
+    return this.mutate((db) => {
+      const now = new Date().toISOString();
+      const list = (db.profiles ??= []);
+      const found = list.find((p) => p.id === input.id);
+      const clean = Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined));
+      if (found) {
+        Object.assign(found, clean, { updatedAt: now });
+        return found;
+      }
+      const p: Profile = { ...input, createdAt: now, updatedAt: now };
+      list.push(p);
+      return p;
+    });
+  }
+  async listProfiles() {
+    return ((await this.read()).profiles ?? []).sort(byCreatedDesc);
+  }
   createOrder(input: NewOrder) {
     return this.mutate((db) => {
       const o: Order = {
@@ -319,8 +362,31 @@ type CategoryRow = {
   sort: number;
   created_at: string;
 };
+type ProfileRow = {
+  id: string;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  phone: string | null;
+  address: string | null;
+  created_at: string;
+  updated_at: string;
+};
+const toProfile = (r: ProfileRow): Profile => ({
+  id: r.id,
+  email: r.email,
+  name: r.name,
+  avatarUrl: r.avatar_url ?? undefined,
+  phone: r.phone ?? undefined,
+  address: r.address ?? undefined,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
 type OrderRow = {
   id: string;
+  track_code?: string | null;
+  user_id?: string | null;
   number: number | null;
   customer: Order["customer"] | null;
   items: Order["items"] | null;
@@ -385,6 +451,8 @@ const toOrder = (r: OrderRow): Order => ({
   total: r.total ?? Math.round(Number(r.total_price) || 0),
   status: (ORDER_STATUSES as readonly string[]).includes(r.status) ? (r.status as OrderStatus) : "pending",
   note: r.note ?? undefined,
+  trackCode: r.track_code ?? undefined,
+  userId: r.user_id ?? undefined,
   createdAt: r.created_at,
 });
 
@@ -503,10 +571,44 @@ class SupabaseStore implements Store {
     const rows = check(await this.db.from("orders").select("*").order("created_at", { ascending: false }));
     return (rows as OrderRow[]).map(toOrder);
   }
+  async listOrdersForUser(userId: string) {
+    const rows = check(
+      await this.db.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false })
+    );
+    return (rows as OrderRow[]).map(toOrder);
+  }
+  async getOrderByTrackCode(code: string) {
+    const row = check(await this.db.from("orders").select("*").eq("track_code", code).maybeSingle());
+    return row ? toOrder(row as OrderRow) : null;
+  }
   async createOrder(input: NewOrder) {
     // `number` comes from an identity column in the database.
-    const row = check(await this.db.from("orders").insert(input).select().single());
+    const { trackCode, userId, ...rest } = input;
+    const row = check(
+      await this.db
+        .from("orders")
+        .insert({ ...rest, track_code: trackCode ?? null, user_id: userId ?? null })
+        .select()
+        .single()
+    );
     return toOrder(row as OrderRow);
+  }
+
+  async getProfile(id: string) {
+    const row = check(await this.db.from("profiles").select("*").eq("id", id).maybeSingle());
+    return row ? toProfile(row as ProfileRow) : null;
+  }
+  async saveProfile(p: ProfileInput) {
+    const row: Record<string, unknown> = { id: p.id, email: p.email, name: p.name, updated_at: new Date().toISOString() };
+    if (p.avatarUrl !== undefined) row.avatar_url = p.avatarUrl;
+    if (p.phone !== undefined) row.phone = p.phone;
+    if (p.address !== undefined) row.address = p.address;
+    const saved = check(await this.db.from("profiles").upsert(row).select().single());
+    return toProfile(saved as ProfileRow);
+  }
+  async listProfiles() {
+    const rows = check(await this.db.from("profiles").select("*").order("created_at", { ascending: false }));
+    return (rows as ProfileRow[]).map(toProfile);
   }
   async updateOrder(id: string, patch: { status?: OrderStatus; note?: string }) {
     const row = check(await this.db.from("orders").update(patch).eq("id", id).select().maybeSingle());
@@ -585,7 +687,7 @@ const backend: Store =
 // change when the admin saves something, so they're cached instead of
 // hitting the database on every click. Every write through `store` clears
 // the cache straight away. Edits made directly in the Supabase dashboard
-// show up within 5 minutes. Orders and quotes are never cached.
+// show up within 5 minutes. Orders, quotes and profiles are never cached.
 const CATALOG_TAG = "catalog";
 
 function withCatalogCache(s: Store): Store {
@@ -612,7 +714,13 @@ function withCatalogCache(s: Store): Store {
     deleteDesign: changes((id) => s.deleteDesign(id)),
 
     listOrders: () => s.listOrders(),
+    listOrdersForUser: (userId) => s.listOrdersForUser(userId),
+    getOrderByTrackCode: (code) => s.getOrderByTrackCode(code),
     createOrder: (input) => s.createOrder(input),
+
+    getProfile: (id) => s.getProfile(id),
+    saveProfile: (p) => s.saveProfile(p),
+    listProfiles: () => s.listProfiles(),
     updateOrder: (id, patch) => s.updateOrder(id, patch),
 
     listQuotes: () => s.listQuotes(),

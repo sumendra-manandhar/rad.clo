@@ -102,6 +102,22 @@ export type Order = {
   total: number;
   status: OrderStatus;
   note?: string;
+  /** Public tracking ID shown to the customer, e.g. "RC-7K3P-9QX2" */
+  trackCode?: string;
+  /** Signed-in customer who placed it (Supabase Auth user id) */
+  userId?: string;
+};
+
+/** A signed-in customer (Google account), with details saved from checkout */
+export type Profile = {
+  id: string;
+  email: string;
+  name: string;
+  avatarUrl?: string;
+  phone?: string;
+  address?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 /** What a bulk order is for — matches who orders in bulk in Nepal. */

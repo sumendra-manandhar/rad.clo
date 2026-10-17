@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, LayoutGrid, Plus, ShoppingBag, Menu, X, Ruler, Users, MessageCircle, HelpCircle, Sparkles } from "lucide-react";
+import { Home, LayoutGrid, Plus, ShoppingBag, Menu, X, Ruler, Users, MessageCircle, HelpCircle, Sparkles, Package, Truck } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import { CONTACT, messengerUrl, viberUrl, whatsappUrl } from "@/lib/contact";
 
@@ -27,6 +27,8 @@ export default function MobileTabBar() {
     }`;
 
   const links = [
+    { href: "/account", label: "My orders", Icon: Package },
+    { href: "/track", label: "Track an order", Icon: Truck },
     { href: "/#how", label: "How it works", Icon: Sparkles },
     { href: "/size-guide", label: "Size chart", Icon: Ruler },
     { href: "/contact#quote", label: "Bulk quote (20+ pieces)", Icon: Users },
@@ -98,7 +100,7 @@ export default function MobileTabBar() {
             <X className="w-4 h-4" />
           </button>
         </div>
-        <ul className="divide-y divide-line">
+        <ul className="divide-y divide-line max-h-[60vh] overflow-y-auto">
           {links.map(({ href, label, Icon }) => (
             <li key={href}>
               <Link href={href} onClick={() => setMore(false)} className="flex items-center gap-3 py-3.5 text-[15px] font-medium active:opacity-60">

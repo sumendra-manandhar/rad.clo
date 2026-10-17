@@ -1,4 +1,8 @@
+import { randomInt } from "crypto";
 import { getPricing, store } from "@/lib/server/store";
+import { currentUser } from "@/lib/server/user";
+import { authEnabled } from "@/lib/supabase/config";
+import { newTrackCode } from "@/lib/track";
 import { SIZES, colorLabel, shippingFor, visibleGarments, visibleLocations } from "@/lib/garments";
 import { cleanPlacement, getLocation } from "@/lib/print-locations";
 import type { CartItem, PrintSpec } from "@/lib/types";
@@ -13,12 +17,18 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid request." }, { status: 400 });
   }
 
+  // Orders need a signed-in customer once Google sign-in is set up.
+  const user = await currentUser();
+  if (authEnabled && !user) {
+    return Response.json({ error: "Please sign in to place your order.", signIn: true }, { status: 401 });
+  }
+
   const c = body.customer ?? {};
   const str = (v: unknown, max = 500) => (typeof v === "string" ? v.trim().slice(0, max) : "");
   const customer = {
     name: str(c.name, 120),
     phone: str(c.phone, 30),
-    email: str(c.email, 160) || undefined,
+    email: str(c.email, 160) || user?.email || undefined,
     address: str(c.address, 600),
   };
   if (!customer.name || !customer.phone || !customer.address) {
@@ -91,6 +101,20 @@ export async function POST(req: Request) {
 
   const subtotal = items.reduce((s, i) => s + i.unitPrice * i.qty, 0);
   const total = subtotal + shippingFor(subtotal);
-  const order = await store.createOrder({ customer, items, total, note: str(c.note, 1000) || undefined });
-  return Response.json({ id: order.id, number: order.number, total: order.total });
+  const order = await store.createOrder({
+    customer,
+    items,
+    total,
+    note: str(c.note, 1000) || undefined,
+    trackCode: newTrackCode(randomInt),
+    userId: user?.id,
+  });
+
+  // Remember phone and address for next time.
+  if (user) {
+    await store
+      .saveProfile({ id: user.id, email: user.email, name: customer.name || user.name, avatarUrl: user.avatarUrl, phone: customer.phone, address: customer.address })
+      .catch((err) => console.error("[orders] couldn't save profile:", err));
+  }
+  return Response.json({ id: order.id, number: order.number, total: order.total, trackCode: order.trackCode });
 }

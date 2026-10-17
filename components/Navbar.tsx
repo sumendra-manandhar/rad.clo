@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { ShoppingBag, ArrowUpRight, Search } from "lucide-react";
 import { useCart } from "@/lib/cart-context";
 import CartDrawer from "@/components/CartDrawer";
+import AccountButton from "@/components/AccountButton";
 import { FREE_SHIPPING_FROM, formatPrice } from "@/lib/garments";
 
 const LINKS = [
@@ -60,6 +61,12 @@ export default function Navbar() {
             <Link href="/shop" aria-label="Search designs" className="md:hidden p-2.5 rounded-full hover:bg-ink/5">
               <Search className="w-5 h-5" />
             </Link>
+            <span className="md:hidden">
+              <AccountButton compact />
+            </span>
+            <span className="hidden md:block">
+              <AccountButton />
+            </span>
             <button
               onClick={openCart}
               aria-label="Open cart"

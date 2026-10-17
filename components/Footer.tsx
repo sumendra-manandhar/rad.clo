@@ -64,6 +64,8 @@ export default function Footer() {
             links={[
               ["How it works", "/#how"],
               ["FAQ", "/#faq"],
+              ["Track an order", "/track"],
+              ["My orders", "/account"],
               ["Bulk quote", "/contact#quote"],
               ["Size chart", "/size-guide"],
               ["Your cart", "/cart"],
