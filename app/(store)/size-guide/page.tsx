@@ -6,8 +6,9 @@ import { visibleGarments } from "@/lib/garments";
 import { SizeChart } from "@/components/SizeChart";
 
 export const metadata: Metadata = {
-  title: "Size chart — Rad.Clo",
-  description: "T-shirt, hoodie and sweatshirt measurements in cm.",
+  title: "T-Shirt & Hoodie Size Chart",
+  description: "Rad.Clo t-shirt, hoodie and sweatshirt size chart with measurements in cm — find your fit before ordering custom clothing in Nepal.",
+  alternates: { canonical: "/size-guide" },
 };
 
 export default async function SizeGuidePage() {

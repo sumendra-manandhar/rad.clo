@@ -8,7 +8,7 @@ import { currentUser } from "@/lib/server/user";
 import { formatPrice } from "@/lib/garments";
 import { OrderItems, OrderTimeline, orderDate } from "@/components/OrderTimeline";
 
-export const metadata: Metadata = { title: "My orders — Rad.Clo", robots: { index: false } };
+export const metadata: Metadata = { title: "My orders", robots: { index: false } };
 
 export default async function AccountPage() {
   await connection(); // always per visitor

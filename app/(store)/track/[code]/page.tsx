@@ -7,7 +7,7 @@ import { normaliseTrackCode } from "@/lib/track";
 import { whatsappUrl } from "@/lib/contact";
 import { OrderItems, OrderTimeline, orderDate } from "@/components/OrderTimeline";
 
-export const metadata: Metadata = { title: "Order tracking — Rad.Clo", robots: { index: false } };
+export const metadata: Metadata = { title: "Order tracking", robots: { index: false } };
 
 // Public: anyone with the tracking ID can see progress. No phone, address or
 // email is shown here — only the first name.

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 import { ArrowRight, ArrowUpRight, Plus, MessageCircle } from "lucide-react";
@@ -9,11 +10,16 @@ import WaysToCreate from "@/components/home/WaysToCreate";
 import PriceBuilder from "@/components/home/PriceBuilder";
 import MagneticLink from "@/components/home/MagneticLink";
 import IntroLoader from "@/components/home/IntroLoader";
+import { SITE } from "@/lib/site";
+import { CONTACT } from "@/lib/contact";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 const TICKER = ["Full front", "Left chest", "Full back", "Upper back", "Sleeves", "Live 3D preview", "No minimum order", "Bulk pricing", "Made to order"];
 
 
 const FAQS = [
+  ["Do you deliver custom t-shirts across Nepal?", "Yes. We print in Kathmandu and deliver anywhere in Nepal — Kathmandu Valley (Kathmandu, Lalitpur, Bhaktapur), Pokhara, Chitwan, Butwal, Biratnagar, Dharan and beyond."],
   ["What file types can I upload?", "PNG, JPG and WEBP. For the cleanest print, upload a transparent PNG at least 2000px wide."],
   ["Is there a minimum order?", "No — order a single piece. Orders of 20+ get bulk pricing; tell us the quantity on the contact page."],
   ["How long does it take?", "Most orders are printed within 3–5 working days, plus 2–5 days for delivery depending on your location."],
@@ -30,8 +36,43 @@ export default async function Home() {
   const wallA = designs.filter((_, i) => i % 2 === 0);
   const wallB = designs.filter((_, i) => i % 2 === 1);
 
+  // Structured data so Google understands the business and can show the FAQ
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": ["Organization", "OnlineStore"],
+        "@id": `${SITE.url}/#business`,
+        name: SITE.name,
+        url: SITE.url,
+        logo: `${SITE.url}/app-icon/512`,
+        image: `${SITE.url}/opengraph-image`,
+        description: SITE.description,
+        email: CONTACT.email,
+        ...(CONTACT.phone && { telephone: CONTACT.phone }),
+        address: { "@type": "PostalAddress", addressLocality: "Kathmandu", addressCountry: "NP" },
+        areaServed: { "@type": "Country", name: "Nepal" },
+        currenciesAccepted: "NPR",
+        knowsAbout: ["Custom t-shirt printing", "Custom hoodies", "Bulk t-shirt printing", "DTF printing"],
+      },
+      {
+        "@type": "WebSite",
+        "@id": `${SITE.url}/#website`,
+        url: SITE.url,
+        name: SITE.name,
+        inLanguage: "en-NP",
+        publisher: { "@id": `${SITE.url}/#business` },
+      },
+      {
+        "@type": "FAQPage",
+        mainEntity: FAQS.map(([q, a]) => ({ "@type": "Question", name: q, acceptedAnswer: { "@type": "Answer", text: a } })),
+      },
+    ],
+  };
+
   return (
     <div className="bg-paper overflow-x-clip">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }} />
       <IntroLoader />
       <HeroPlayground designs={heroDesigns} pricing={pricing} />
 
@@ -168,6 +209,17 @@ export default async function Home() {
             </details>
           ))}
         </div>
+      </section>
+
+      {/* ── About (plain words for people and search engines) ── */}
+      <section className="max-w-3xl mx-auto px-6 pb-24 text-center">
+        <h2 className="font-black uppercase text-2xl md:text-3xl tracking-[-0.03em]">Custom t-shirt printing in Nepal</h2>
+        <p className="text-muted mt-4 leading-relaxed">
+          Rad.Clo prints custom t-shirts, hoodies and sweatshirts in Kathmandu and delivers across Nepal. Design your own
+          tee online with our live 3D studio — upload a photo, logo or artwork, add your text, or pick one of our original
+          prints. Order a single personalised t-shirt or bulk t-shirts for college fests, sports teams, companies, events
+          and clubs, with no minimum order.
+        </p>
       </section>
 
       {/* ── Final CTA ── */}

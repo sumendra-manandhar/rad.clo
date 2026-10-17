@@ -28,7 +28,7 @@ export default function Footer() {
               Rad<span className="text-flame">.</span>Clo
             </p>
             <p className="text-sm text-paper/60 mt-3 max-w-xs">
-              Custom t-shirt printing with a live 3D preview. Pick a design from
+              Custom t-shirt printing in Nepal with a live 3D preview. Pick a design from
               our store or bring your own — printed to order, one piece or five
               hundred.
             </p>

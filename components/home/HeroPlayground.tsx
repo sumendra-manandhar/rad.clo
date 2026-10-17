@@ -130,7 +130,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
         {/* Copy */}
         <div data-intro-reveal className="text-center lg:text-left">
           <span className="inline-flex items-center gap-2 rounded-full bg-white/5 ring-1 ring-white/15 px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.18em]">
-            <span className="w-1.5 h-1.5 rounded-full bg-lime animate-pulse" /> Live 3D print studio
+            <span className="w-1.5 h-1.5 rounded-full bg-lime animate-pulse" /> Custom t-shirt printing · Nepal
           </span>
           <h1 className="font-black uppercase leading-[0.9] tracking-[-0.045em] text-[clamp(52px,7.2vw,112px)] mt-6">
             Your art.
@@ -143,8 +143,8 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
             </span>
           </h1>
           <p className="text-white/60 text-base md:text-lg mt-7 max-w-md mx-auto lg:mx-0 leading-relaxed">
-            Shop our original prints or bring your own. Place it on the front, back or sleeves, watch it come to life on a
-            3D shirt — we print and ship.
+            Custom t-shirts printed in Nepal. Shop our original prints or bring your own, place it on the front, back or
+            sleeves, watch it come to life on a 3D shirt — we print and deliver across Nepal.
           </p>
           <div className="flex flex-col sm:flex-row gap-3 mt-9 justify-center lg:justify-start">
             <Link

@@ -3,7 +3,11 @@ import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { normaliseTrackCode } from "@/lib/track";
 
-export const metadata: Metadata = { title: "Track your order — Rad.Clo" };
+export const metadata: Metadata = {
+  title: "Track your order",
+  description: "Track your Rad.Clo custom t-shirt order with your tracking code.",
+  alternates: { canonical: "/track" },
+};
 
 export default async function TrackPage({ searchParams }: PageProps<"/track">) {
   const sp = await searchParams;

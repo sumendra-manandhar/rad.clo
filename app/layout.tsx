@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Bricolage_Grotesque, Poppins } from "next/font/google";
 import "./globals.css";
 import { textFontVariables } from "./fonts/text-fonts";
+import { SITE } from "@/lib/site";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const bricolage = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-bricolage" });
@@ -15,10 +16,24 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE.url),
   appleWebApp: { capable: true, title: "Rad.Clo", statusBarStyle: "default" },
-  title: "Rad.Clo — Custom T-Shirt Printing with Live 3D Preview",
-  description:
-    "Design custom t-shirts, hoodies and sweatshirts. Pick a print from our design store or upload your own, preview it on a 3D shirt, and order.",
+  title: { default: SITE.title, template: "%s | Rad.Clo Nepal" },
+  description: SITE.description,
+  keywords: SITE.keywords,
+  applicationName: SITE.name,
+  openGraph: {
+    type: "website",
+    siteName: SITE.name,
+    locale: "en_NP",
+    title: SITE.title,
+    description: SITE.description,
+  },
+  twitter: { card: "summary_large_image", title: SITE.title, description: SITE.description },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, "max-image-preview": "large" } },
+  // From Google Search Console → Add property → HTML tag
+  verification: { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION || undefined },
+  other: { "geo.region": "NP", "geo.placename": "Kathmandu" },
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

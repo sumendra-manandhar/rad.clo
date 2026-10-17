@@ -1,10 +1,16 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Search, Upload } from "lucide-react";
 import { getStorefront } from "@/lib/server/store";
 import DesignCard from "@/components/DesignCard";
 import { designFromPrice } from "@/lib/garments";
 
-export const metadata = { title: "Shop Designs — Rad.Clo" };
+export const metadata: Metadata = {
+  title: "Shop Printed T-Shirt Designs",
+  description:
+    "Browse original printed t-shirt, hoodie and sweatshirt designs made in Nepal. Pick a print, preview it in 3D and order — no minimum, delivered across Nepal.",
+  alternates: { canonical: "/shop" },
+};
 
 const SORTS = [
   ["popular", "Popular"],

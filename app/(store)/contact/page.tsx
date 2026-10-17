@@ -7,8 +7,10 @@ import { CONTACT, messengerUrl, phoneDisplay, telUrl, viberUrl, whatsappUrl } fr
 import BulkQuoteForm from "@/components/BulkQuoteForm";
 
 export const metadata: Metadata = {
-  title: "Contact & bulk quotes — Rad.Clo",
-  description: "Custom tees for college fests, teams, companies and events across Nepal. Get a bulk quote.",
+  title: "Bulk T-Shirt Printing in Nepal — Contact & Quotes",
+  description:
+    "Bulk custom t-shirt printing in Nepal for college fests, sports teams, companies and events. Get a quote with tiered pricing and free design help — delivery across Kathmandu and Nepal.",
+  alternates: { canonical: "/contact" },
 };
 
 export default async function ContactPage() {

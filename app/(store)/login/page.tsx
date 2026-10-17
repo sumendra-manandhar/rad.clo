@@ -6,7 +6,7 @@ import GoogleButton from "@/components/GoogleButton";
 import { currentUser } from "@/lib/server/user";
 import { authEnabled } from "@/lib/supabase/config";
 
-export const metadata: Metadata = { title: "Sign in — Rad.Clo", robots: { index: false } };
+export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const sp = await searchParams;
