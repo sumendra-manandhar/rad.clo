@@ -72,6 +72,9 @@ export function shippingFor(subtotal: number) {
   return subtotal >= FREE_SHIPPING_FROM ? 0 : SHIPPING_FEE;
 }
 
+/** Which 3D model the studio shows for a garment. */
+export const garmentModel = (slug: string): "tee" | "hoodie" => (slug === "hoodie" ? "hoodie" : "tee");
+
 export function getGarment(slug?: string | null) {
   return GARMENTS.find((g) => g.slug === slug) ?? GARMENTS[0];
 }

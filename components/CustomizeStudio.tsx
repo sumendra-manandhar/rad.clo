@@ -32,6 +32,9 @@ import {
   Redo2,
   Box,
   LayoutGrid,
+  Clapperboard,
+  Square,
+  Download,
 } from "lucide-react";
 import type { Category, Design, PrintPlacement, PrintSpec } from "@/lib/types";
 import {
@@ -40,6 +43,7 @@ import {
   colorLabel,
   formatPrice,
   garmentFor,
+  garmentModel,
   visibleGarments,
   visibleLocations,
   type Pricing,
@@ -108,6 +112,21 @@ function refit<T extends Layer>(l: T): T {
 }
 
 const textKey = (a: { text: string; style: TextStyle }) => textArtKey(a.text, a.style);
+
+/** Length of the 3D showcase loop (SHOWCASE_SECONDS in TShirtViewer) */
+const SHOWCASE_SECONDS = 10;
+
+/** Pill button on the 3D stage */
+const stageButton = (dark: boolean, on: boolean) =>
+  `flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full border transition-colors disabled:opacity-60 ${
+    on
+      ? dark
+        ? "bg-paper text-ink border-paper"
+        : "bg-ink text-paper border-ink"
+      : dark
+        ? "bg-white/10 border-white/15 hover:border-white/50"
+        : "bg-white/90 border-line hover:border-ink"
+  }`;
 
 /** New text starts in a colour that reads well on the shirt. */
 const newTextStyle = (shirt: string): TextStyle => ({
@@ -335,6 +354,37 @@ export default function CustomizeStudio({
   const [panel, setPanel] = useState<"add" | "designs" | "shirt">(initialDesign && !mode ? "designs" : "add");
   // Print area new designs go to (null = the main area of the side being viewed).
   const [addTo, setAddTo] = useState<string | null>(null);
+  /** Cinematic camera loop round the garment: 0 = off, a new number restarts it */
+  const [showcase, setShowcase] = useState(0);
+  const [recording, setRecording] = useState(false);
+
+  /** Records one showcase loop from the 3D canvas and downloads it. */
+  const saveShowcase = () => {
+    const canvas = viewerRef.current?.querySelector("canvas");
+    if (!canvas || typeof MediaRecorder === "undefined") return;
+    const type = ["video/mp4;codecs=avc1", "video/mp4", "video/webm;codecs=vp9", "video/webm"].find((t) =>
+      MediaRecorder.isTypeSupported(t)
+    );
+    if (!type) return;
+    setShowcase((n) => n + 1); // from the start of the loop
+    setRecording(true);
+    const stream = canvas.captureStream(30);
+    const rec = new MediaRecorder(stream, { mimeType: type, videoBitsPerSecond: 8_000_000 });
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      const url = URL.createObjectURL(new Blob(chunks, { type }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `radclo-${g.slug}.${type.startsWith("video/mp4") ? "mp4" : "webm"}`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+      setRecording(false);
+    };
+    rec.start();
+    setTimeout(() => rec.stop(), SHOWCASE_SECONDS * 1000);
+  };
   // Phones show either the 3D shirt or the flat position guide above the tools.
   const [stage, setStage] = useState<"3d" | "guide">("3d");
   const [newText, setNewText] = useState("YOUR TEXT");
@@ -772,6 +822,9 @@ export default function CustomizeStudio({
   const viewer = (dark: boolean) => (
     <div ref={viewerRef} className="absolute inset-0">
       <TShirtViewer
+        model={garmentModel(g.slug)}
+        closeZoom
+        showcase={showcase}
         color={color}
         prints={shirtPrints}
         view={view.name}
@@ -807,6 +860,62 @@ export default function CustomizeStudio({
           </button>
         ))}
       </div>
+      {/* Showcase: a cinematic camera loop round the garment, and a clip of it to save */}
+      <div className="absolute right-3 bottom-3 lg:right-4 lg:bottom-4 flex gap-1.5">
+        <button
+          onClick={() => setShowcase((n) => (n ? 0 : 1))}
+          disabled={recording}
+          aria-pressed={showcase > 0}
+          title={showcase ? "Stop the showcase" : `Play a ${SHOWCASE_SECONDS}-second cinematic loop round the garment`}
+          className={stageButton(dark, showcase > 0)}
+        >
+          {showcase ? <Square className="w-4 h-4" /> : <Clapperboard className="w-4 h-4" />}
+          {recording ? "Recording…" : showcase ? "Stop" : "Showcase"}
+        </button>
+        <button
+          onClick={saveShowcase}
+          disabled={recording}
+          title={`Record one ${SHOWCASE_SECONDS}-second loop and download it`}
+          className={stageButton(dark, false)}
+        >
+          <Download className="w-4 h-4" /> Save video
+        </button>
+      </div>
+      {/* Garment switcher: top on phones (the 3D/Guide toggle sits bottom-left), bottom on desktop */}
+      {garments.length > 1 && (
+        <div className="absolute inset-x-3 top-3 lg:top-auto lg:bottom-4 flex justify-center pointer-events-none">
+          <div
+            role="radiogroup"
+            aria-label="Garment"
+            className={`pointer-events-auto flex gap-1 max-w-full overflow-x-auto rounded-full p-1 backdrop-blur scrollbar-none ${
+              dark ? "bg-white/10" : "bg-white/80 ring-1 ring-line"
+            }`}
+          >
+            {garments.map((x) => {
+              const on = garment === x.slug;
+              return (
+                <button
+                  key={x.slug}
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setGarment(x.slug)}
+                  className={`shrink-0 whitespace-nowrap text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
+                    on
+                      ? dark
+                        ? "bg-paper text-ink"
+                        : "bg-ink text-paper"
+                      : dark
+                        ? "text-paper/80 hover:bg-white/10"
+                        : "text-ink/80 hover:bg-black/5"
+                  }`}
+                >
+                  {x.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 

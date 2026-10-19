@@ -240,12 +240,26 @@ const OUTWARD = {
   right: new THREE.Vector3(-1, 0, 0),
 };
 
+// ── Garment models ───────────────────────────────────────────────────────────
+// lengthIn:  shoulder-to-hem length the model represents, in inches
+// shoulderY: height of the shoulder line in model units (default: the top of
+//            the model — the hoodie's hood rises above its shoulders)
+// depth:     how deep a front/back print projects, as a share of the model's
+//            front-to-back thickness
+// dyeable:   the model's colour map is near-black, so drop it (keeping its
+//            normal/roughness detail) and colour the fabric directly
+export const MODELS = {
+  tee: { url: "/tshirt.glb", lengthIn: 31, depth: 0.35 },
+  hoodie: { url: "/hoodie.glb", lengthIn: 27, shoulderY: 1.64, depth: 0.5, dyeable: true },
+};
+
 // ── The actual GLB model ──────────────────────────────────────────────────────
 const SPIN_SECONDS = 1.1;
 const TURN = Math.PI * 2;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
+function TShirtModel({ model = "tee", closeZoom = false, showcase = 0, color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
+  const cfg = MODELS[model] ?? MODELS.tee;
   const group = useRef();
 
   // One full turn each time `spin` changes. onSpinHalfway fires when the back
@@ -274,7 +288,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
     (src) => setLoadedSrcs((prev) => (prev.has(src) ? prev : new Set(prev).add(src))),
     []
   );
-  const { scene } = useGLTF("/tshirt.glb");
+  const { scene } = useGLTF(cfg.url);
 
   // Clone so color changes don't mutate the cached asset
   const cloned = useMemo(() => scene.clone(true), [scene]);
@@ -289,6 +303,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
     cloned.traverse((obj) => {
       if (!obj.isMesh || !obj.geometry) return;
       obj.material = obj.material.clone();
+      if (cfg.dyeable) obj.material.map = null;
       // Soft cotton sheen (the model's material is MeshPhysicalMaterial)
       if ("sheen" in obj.material) {
         obj.material.sheen = 1;
@@ -297,14 +312,14 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
       obj.castShadow = true;
       obj.receiveShadow = true;
       if (!obj.geometry.attributes.normal) obj.geometry.computeVertexNormals();
-      obj.geometry.computeBoundingBox();
+      if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
       const toRoot = rootInv.clone().multiply(obj.matrixWorld);
       const box = obj.geometry.boundingBox.clone().applyMatrix4(toRoot);
       rootBox.union(box);
       panels.push({ mesh: obj, box, fromRoot: toRoot.clone().invert() });
     });
     return { panels, rootBox };
-  }, [cloned]);
+  }, [cloned, cfg]);
 
   useEffect(() => {
     const base = fabricColor(color);
@@ -337,17 +352,20 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
     if (autoRotate) group.current.rotation.y += delta * 0.2; // Adjust rotation speed here
   });
 
-  // Center & scale the model to fit nicely — compute once per loaded model
-  const { scale, center } = useMemo(() => {
+  // Scale every garment by its body (shoulder to hem), not its overall size,
+  // so print areas show at the same size on every garment — unless that
+  // would push a hood or outstretched sleeves out of frame.
+  const { scale, center, chestY } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(cloned);
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z) || 1;
-    const s = 2.6 / maxDim;
-    const c = new THREE.Vector3();
-    box.getCenter(c);
-    return { scale: s, center: c };
-  }, [cloned]);
+    const size = box.getSize(new THREE.Vector3());
+    const top = cfg.shoulderY ?? box.max.y;
+    const body = top - box.min.y || 1;
+    const s = Math.min(BODY_LENGTH / body, MAX_EXTENT / Math.max(size.x, size.y));
+    const c = box.getCenter(new THREE.Vector3());
+    // Where close zoom aims: the upper part of the full front/back print
+    const chestY = (top - CHEST_IN * (body / cfg.lengthIn) - c.y) * s;
+    return { scale: s, center: c, chestY };
+  }, [cloned, cfg]);
 
   // Resolve each print (area in inches from lib/print-locations + the
   // customer's placement inside it) to a point on the fabric, then into
@@ -356,7 +374,9 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
     if (!prints?.length || rootBox.isEmpty()) return [];
     const size = rootBox.getSize(new THREE.Vector3());
     const mid = rootBox.getCenter(new THREE.Vector3());
-    const inch = size.y / 31; // the model is roughly a 31″-long garment
+    // Shoulder line, and model units per inch of the shoulder-to-hem length
+    const top = cfg.shoulderY ?? rootBox.max.y;
+    const inch = (top - rootBox.min.y) / cfg.lengthIn;
 
     cloned.updateWorldMatrix(true, true);
     const rootToWorld = cloned.matrixWorld.clone();
@@ -382,7 +402,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
         // top of the shoulders.
         const dx = ((loc.cx ?? 0) + (pl.x - 0.5) * loc.inches.w) * inch;
         const down = (loc.top + pl.y * loc.inches.h) * inch;
-        const aim = new THREE.Vector3(mid.x, rootBox.max.y - down, mid.z).addScaledVector(right, dx);
+        const aim = new THREE.Vector3(mid.x, top - down, mid.z).addScaledVector(right, dx);
 
         // Fire a ray at the shirt from outside to find the fabric surface.
         const far = Math.max(size.x, size.z) * 4;
@@ -398,10 +418,16 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
         const width = pl.w * loc.inches.w * inch;
         // Shallow projection: deep enough to wrap the curve of the fabric,
         // too shallow to reach the opposite side of the shirt.
-        const depth = sleeve ? size.x * 0.12 : size.z * 0.35;
+        const depth = sleeve ? size.x * 0.12 : size.z * cfg.depth;
 
-        const reach = Math.max(width * 1.5, depth);
-        const decalBox = new THREE.Box3().setFromCenterAndSize(point, new THREE.Vector3(reach, reach, reach));
+        // Bounds of the projection: the rotated artwork across the fabric
+        // (tall artwork assumed when its shape isn't known), `depth` through it.
+        const aspect = crop ? loc.inches.w / loc.inches.h : print.aspect || 0.5;
+        const reach = Math.hypot(width, width / aspect);
+        const extent = new THREE.Vector3(reach, reach, reach);
+        if (normal.x) extent.x = depth;
+        else extent.z = depth;
+        const decalBox = new THREE.Box3().setFromCenterAndSize(point, extent);
 
         const panelPlacements = panels
           .filter((p) => p.box.intersectsBox(decalBox))
@@ -429,7 +455,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
         return { key: print.id ?? print.location, id: print.id, src: print.src, crop, placement: { width, depth, panels: panelPlacements } };
       })
       .filter(Boolean);
-  }, [prints, panels, rootBox, cloned]);
+  }, [prints, panels, rootBox, cloned, cfg]);
 
   // Ready once the shirt and every print's artwork are loaded.
   const allLoaded = placements.every((p) => loadedSrcs.has(p.src));
@@ -437,6 +463,8 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
   return (
     <group ref={group}>
       {allLoaded && <ReadySignal onReady={onReady} />}
+      {closeZoom && showcase === 0 && <ChestZoom chestY={chestY} />}
+      {showcase > 0 && <ShowcaseCamera key={showcase} chestY={chestY} />}
       <primitive
         object={cloned}
         scale={scale}
@@ -456,6 +484,96 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
       ))}
     </group>
   );
+}
+
+// ── Camera framing ──────────────────────────────────────────────────────────
+// The view aims at the middle of the garment's body, so it sits centred.
+const TARGET_Y = 0;
+const CAMERA_POSITION = [0, TARGET_Y + 0.8, 3.2];
+const HOME_DISTANCE = Math.hypot(CAMERA_POSITION[1] - TARGET_Y, CAMERA_POSITION[2]);
+/** Closest zoom (camera distance) with close zoom on, and without */
+const NEAR_CLOSE = 1.1;
+const NEAR_DEFAULT = 2.2;
+/** Every garment's shoulder-to-hem length on screen, in scene units */
+const BODY_LENGTH = 2.6;
+/** Largest width or height (hood, sleeves included) that fits the frame */
+const MAX_EXTENT = 2.9;
+/** Inches below the shoulder line that close zoom aims at */
+const CHEST_IN = 11;
+
+// ── Showcase: a 10-second cinematic camera loop ─────────────────────────────
+// Keyframes: [seconds, angle round the garment (° — 0 = front, 90 = its left
+// side), angle down from overhead (°), distance, aim height (0 = body
+// centre, 1 = chest)]. It pushes in on the front print, sweeps round a side,
+// the back and the other side at changing heights, and ends where it began.
+export const SHOWCASE_SECONDS = 10;
+const SHOT = [
+  [0, 0, 74, 3.3, 0],
+  [1.8, 22, 68, 2.0, 1],
+  [3.4, 95, 80, 2.7, 0.3],
+  [5.2, 180, 66, 2.2, 0.8],
+  [6.8, 262, 82, 2.8, 0.2],
+  [8.6, 338, 64, 2.1, 1],
+];
+
+/** Catmull-Rom between b and c (a, d are the neighbours) — smooth through every keyframe. */
+const spline = (a, b, c, d, t) =>
+  0.5 * (2 * b + (c - a) * t + (2 * a - 5 * b + 4 * c - d) * t * t + (3 * b - a - 3 * c + d) * t * t * t);
+
+/** Camera at `time` seconds into the loop: { azimuth, polar } (radians), distance, aim height. */
+function showcaseAt(time) {
+  const n = SHOT.length;
+  const t = ((time % SHOWCASE_SECONDS) + SHOWCASE_SECONDS) % SHOWCASE_SECONDS;
+  let i = n - 1;
+  while (SHOT[i][0] > t) i--;
+  // Keyframe k, wrapping round the loop (angles keep turning, times keep going)
+  const key = (k) => {
+    const lap = Math.floor(k / n);
+    const [at, az, ...rest] = SHOT[((k % n) + n) % n];
+    return [at + lap * SHOWCASE_SECONDS, az + lap * 360, ...rest];
+  };
+  const [a, b, c, d] = [key(i - 1), key(i), key(i + 1), key(i + 2)];
+  const u = (t - b[0]) / (c[0] - b[0]);
+  const v = (j) => spline(a[j], b[j], c[j], d[j], u);
+  return { azimuth: THREE.MathUtils.degToRad(v(1)), polar: THREE.MathUtils.degToRad(v(2)), distance: v(3), aim: v(4) };
+}
+
+// Drives the camera along the showcase loop while it plays (the customer's
+// orbit controls are paused); stopping hands the camera back where it is.
+function ShowcaseCamera({ chestY }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls);
+  const time = useRef(0);
+  const sph = useMemo(() => new THREE.Spherical(), []);
+  useFrame((_, dt) => {
+    time.current += Math.min(dt, 0.1);
+    const { azimuth, polar, distance, aim } = showcaseAt(time.current);
+    const target = new THREE.Vector3(0, TARGET_Y + (chestY - TARGET_Y) * aim, 0);
+    sph.set(distance, polar, azimuth);
+    camera.position.setFromSpherical(sph).add(target);
+    camera.lookAt(target);
+    controls?.target.copy(target);
+  });
+  return null;
+}
+
+// As the customer zooms in, glide the view up to the chest so the print
+// stays in frame; zooming back out returns to the full-garment view. Target
+// and camera move together, so the angle and distance don't change.
+function ChestZoom({ chestY }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls);
+  useFrame(() => {
+    if (!controls) return;
+    const d = camera.position.distanceTo(controls.target);
+    const t = THREE.MathUtils.smoothstep(d, NEAR_CLOSE, HOME_DISTANCE);
+    const y = chestY + (TARGET_Y - chestY) * t;
+    const dy = y - controls.target.y;
+    if (Math.abs(dy) < 1e-4) return;
+    controls.target.setY(y);
+    camera.position.setY(camera.position.y + dy);
+  });
+  return null;
 }
 
 // ── Turns the camera to face a print location ────────────────────────────────
@@ -525,6 +643,9 @@ function ReadySignal({ onReady }) {
 // view:   "front" | "back" | "left" | "right" — turns the camera to face it
 //         (bump viewNonce to re-focus the same view after the user dragged)
 export default function TShirtViewer({
+  model = "tee",
+  closeZoom = false,
+  showcase = 0,
   color,
   prints = [],
   view = null,
@@ -545,7 +666,7 @@ export default function TShirtViewer({
   useEffect(() => {
     if (controlsRef.current) {
       // Tune this target if the shirt sits too high/low in the frame.
-      controlsRef.current.target.set(0, -0.4, 0);
+      controlsRef.current.target.set(0, TARGET_Y, 0);
       controlsRef.current.update();
     }
   }, []);
@@ -582,7 +703,7 @@ export default function TShirtViewer({
       shadows
       // Adjusted camera to better frame the shirt by default. If you want
       // a tighter/looser framing, tweak the Z and Y values here.
-      camera={{ position: [0, 0.8, 3.2], fov: 60 }}
+      camera={{ position: CAMERA_POSITION, fov: 60 }}
       style={{ background: "transparent", width: "100%", height: "100%" }}
       // preserveDrawingBuffer lets the customizer snapshot the canvas
       // (canvas.toDataURL) as an order preview for the admin.
@@ -623,6 +744,9 @@ export default function TShirtViewer({
       {/* The shirt */}
       <Suspense fallback={<Loader />}>
         <TShirtModel
+          model={model}
+          closeZoom={closeZoom}
+          showcase={showcase}
           color={color}
           prints={prints}
           autoRotate={isAutoRotating && autoRotate}
@@ -639,9 +763,11 @@ export default function TShirtViewer({
       <OrbitControls
         ref={controlsRef}
         makeDefault
+        // Paused while the showcase camera plays
+        enabled={showcase === 0}
         enablePan={false}
         enableZoom={true}
-        minDistance={2.2}
+        minDistance={closeZoom ? NEAR_CLOSE : NEAR_DEFAULT}
         maxDistance={4.0}
         autoRotate={isAutoRotating && autoRotate}
         onStart={handleControlsStart}
