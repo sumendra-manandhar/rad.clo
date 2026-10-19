@@ -148,11 +148,12 @@ function useCroppedTexture(texture, crop) {
 // panels are stored Z-up and stood upright by a -90° parent rotation, so a
 // decal attached anywhere else misses that rotation and lies flat under the
 // shirt.
-function PrintDecal({ src, placement, crop, onLoaded, onSelect, order = 0 }) {
+function PrintDecal({ id, src, placement, crop, hidden = false, onLoaded, onSelect, order = 0 }) {
   const loaded = useDecalTexture(src);
+  // Runs after the decals below have been built onto the fabric
   useEffect(() => {
-    if (loaded) onLoaded(src);
-  }, [loaded, src, onLoaded]);
+    if (loaded) onLoaded(src, id);
+  }, [loaded, src, id, onLoaded]);
   const texture = useCroppedTexture(loaded, crop);
 
   // Artwork width comes from the placement; height follows its aspect ratio.
@@ -175,6 +176,7 @@ function PrintDecal({ src, placement, crop, onLoaded, onSelect, order = 0 }) {
             scale={[fit[0] * unit, fit[1] * unit, placement.depth * unit]}
             texture={texture}
             order={order}
+            visible={!hidden}
             onSelect={onSelect}
           />
         </DecalBoundary>,
@@ -184,7 +186,7 @@ function PrintDecal({ src, placement, crop, onLoaded, onSelect, order = 0 }) {
   ));
 }
 
-function PanelDecal({ mesh, position, rotation, scale, texture, order, onSelect }) {
+function PanelDecal({ mesh, position, rotation, scale, texture, order, visible = true, onSelect }) {
   const meshRef = useMemo(() => ({ current: mesh }), [mesh]);
   // Later prints draw on top of earlier ones; tapping a print selects it.
   const events = onSelect
@@ -198,7 +200,7 @@ function PanelDecal({ mesh, position, rotation, scale, texture, order, onSelect 
       }
     : {};
   return (
-    <Decal mesh={meshRef} position={position} rotation={rotation} scale={scale} renderOrder={1 + order} {...events}>
+    <Decal mesh={meshRef} position={position} rotation={rotation} scale={scale} renderOrder={1 + order} visible={visible} {...events}>
       <meshStandardMaterial
         map={texture}
         transparent
@@ -248,11 +250,14 @@ const OUTWARD = {
 //            front-to-back thickness
 // frontLiftIn: inches to raise front prints by on this model (the hoodie's
 //            chest sits higher relative to its shoulder line than the tee's)
+// maxExtent: largest width/height on screen (default MAX_EXTENT); higher lets
+//            a wide model (the hoodie's outstretched sleeves) show closer to
+//            the tee's size, cuffs nearer the frame edge
 // dyeable:   the model's colour map is near-black, so drop it (keeping its
 //            normal/roughness detail) and colour the fabric directly
 export const MODELS = {
   tee: { url: "/tshirt.glb", lengthIn: 31, depth: 0.35 },
-  hoodie: { url: "/hoodie.glb", lengthIn: 27, shoulderY: 1.64, depth: 0.5, frontLiftIn: 2, dyeable: true },
+  hoodie: { url: "/hoodie.glb", lengthIn: 27, shoulderY: 1.64, depth: 0.5, frontLiftIn: 2, dyeable: true, maxExtent: 3.5 },
 };
 
 // ── The actual GLB model ──────────────────────────────────────────────────────
@@ -260,13 +265,31 @@ const SPIN_SECONDS = 1.1;
 const TURN = Math.PI * 2;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEnd, color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
+function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEnd, onPrintLoaded, view = null, slant = 0, restDistance = null, spinDistance = null, color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
   const cfg = MODELS[model] ?? MODELS.tee;
   const group = useRef();
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls);
+  // Resting angle: the garment faces the viewer turned by `slant` degrees
+  const rest = THREE.MathUtils.degToRad(slant);
 
-  // One full turn each time `spin` changes. onSpinHalfway fires when the back
-  // faces the camera, so the caller can swap the print out of sight.
+  // One full turn each time `spin` changes, ending at the resting angle.
+  // onSpinHalfway fires when the back faces the camera, so the caller can
+  // swap the print out of sight. If the visitor had dragged the view round,
+  // the camera glides back to the front during the turn.
   const spinAnim = useRef(null);
+  useEffect(() => {
+    if (group.current && !spinAnim.current) group.current.rotation.y = rest;
+  }, [rest]);
+  // Resting camera distance (closer than the default view when set)
+  const restR = restDistance ?? HOME_DISTANCE;
+  // Distance the camera passes through mid-spin (closer = zooms in during the turn)
+  const midR = spinDistance ?? HOME_DISTANCE;
+  useEffect(() => {
+    if (!controls || restDistance == null) return;
+    const offset = camera.position.clone().sub(controls.target).setLength(restDistance);
+    camera.position.copy(controls.target).add(offset);
+  }, [controls, camera, restDistance]);
   const lastSpin = useRef(spin);
   const halfway = useRef(onSpinHalfway);
   useEffect(() => {
@@ -279,17 +302,28 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
       halfway.current?.();
       return;
     }
-    const from = group.current?.rotation.y ?? 0;
-    // Always finish facing front, even if a new spin starts mid-turn.
-    const to = Math.ceil((from + Math.PI) / TURN) * TURN;
-    spinAnim.current = { t: 0, from, to, swapped: false };
+    const from = group.current?.rotation.y ?? rest;
+    // Always finish at the resting angle, even if a new spin starts mid-turn.
+    const to = Math.ceil((from - rest + Math.PI) / TURN) * TURN + rest;
+    let cam = null;
+    if (controls) {
+      const start = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+      const theta = VIEW_ANGLE[view] ?? 0;
+      cam = { start, turn: Math.atan2(Math.sin(theta - start.theta), Math.cos(theta - start.theta)) };
+    }
+    spinAnim.current = { t: 0, from, to, swapped: false, cam };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spin]);
   // Artwork images that have finished loading (see the ready check below)
   const [loadedSrcs, setLoadedSrcs] = useState(() => new Set());
-  const markLoaded = useCallback(
-    (src) => setLoadedSrcs((prev) => (prev.has(src) ? prev : new Set(prev).add(src))),
-    []
-  );
+  const printLoaded = useRef(onPrintLoaded);
+  useEffect(() => {
+    printLoaded.current = onPrintLoaded;
+  });
+  const markLoaded = useCallback((src, id) => {
+    setLoadedSrcs((prev) => (prev.has(src) ? prev : new Set(prev).add(src)));
+    if (id) printLoaded.current?.(id);
+  }, []);
   const { scene } = useGLTF(cfg.url);
 
   // Clone so color changes don't mutate the cached asset
@@ -338,9 +372,25 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
     if (!group.current) return;
     const a = spinAnim.current;
     if (a) {
-      a.t = Math.min(1, a.t + delta / SPIN_SECONDS);
-      const angle = a.from + (a.to - a.from) * easeInOutCubic(a.t);
+      // A slow frame slows the turn a touch instead of making it jump
+      a.t = Math.min(1, a.t + Math.min(delta, 1 / 30) / SPIN_SECONDS);
+      const e = easeInOutCubic(a.t);
+      const angle = a.from + (a.to - a.from) * e;
       group.current.rotation.y = angle;
+      if (a.cam && controls) {
+        const { start, turn } = a.cam;
+        // One continuous move: from where the camera was to the resting
+        // distance, bowing towards the mid-spin distance on the way.
+        const base = start.radius + (restR - start.radius) * e;
+        const radius = base + (midR - base) * Math.sin(Math.PI * e);
+        const sph = new THREE.Spherical(
+          radius,
+          start.phi + (HOME_PHI - start.phi) * e,
+          start.theta + turn * e
+        );
+        camera.position.setFromSpherical(sph).add(controls.target);
+        camera.lookAt(controls.target);
+      }
       if (!a.swapped && angle >= a.to - Math.PI) {
         a.swapped = true;
         halfway.current?.();
@@ -362,7 +412,7 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
     const size = box.getSize(new THREE.Vector3());
     const top = cfg.shoulderY ?? box.max.y;
     const body = top - box.min.y || 1;
-    const s = Math.min(BODY_LENGTH / body, MAX_EXTENT / Math.max(size.x, size.y));
+    const s = Math.min(BODY_LENGTH / body, (cfg.maxExtent ?? MAX_EXTENT) / Math.max(size.x, size.y));
     const c = box.getCenter(new THREE.Vector3());
     // Where close zoom aims: the upper part of the full front/back print
     const chestY = (top - CHEST_IN * (body / cfg.lengthIn) - c.y) * s;
@@ -455,7 +505,14 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
             };
           });
 
-        return { key: print.id ?? print.location, id: print.id, src: print.src, crop, placement: { width, depth, panels: panelPlacements } };
+        return {
+          key: print.id ?? print.location,
+          id: print.id,
+          src: print.src,
+          hidden: !!print.hidden,
+          crop,
+          placement: { width, depth, panels: panelPlacements },
+        };
       })
       .filter(Boolean);
   }, [prints, panels, rootBox, cloned, cfg]);
@@ -477,7 +534,9 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
       {placements.map((p, i) => (
         <PrintDecal
           key={`${p.key}:${p.src.slice(-40)}`}
+          id={p.id}
           src={p.src}
+          hidden={p.hidden}
           placement={p.placement}
           crop={p.crop}
           onLoaded={markLoaded}
@@ -494,6 +553,8 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
 const TARGET_Y = 0;
 const CAMERA_POSITION = [0, TARGET_Y + 0.8, 3.2];
 const HOME_DISTANCE = Math.hypot(CAMERA_POSITION[1] - TARGET_Y, CAMERA_POSITION[2]);
+/** Home camera angle down from overhead */
+const HOME_PHI = Math.acos((CAMERA_POSITION[1] - TARGET_Y) / HOME_DISTANCE);
 /** Closest zoom (camera distance) with close zoom on, and without */
 const NEAR_CLOSE = 1.1;
 const NEAR_DEFAULT = 2.2;
@@ -587,6 +648,23 @@ function ChestZoom({ chestY }) {
   return null;
 }
 
+// On tall, narrow screens (a phone in full screen) widen the view so the
+// garment's full width still fits; otherwise keep the 60° field of view.
+const FOV = 60;
+const MIN_ASPECT = 0.75;
+function FitFov() {
+  const camera = useThree((s) => s.camera);
+  const aspect = useThree((s) => s.size.width / Math.max(1, s.size.height));
+  useEffect(() => {
+    const half = THREE.MathUtils.degToRad(FOV / 2);
+    const fov =
+      aspect >= MIN_ASPECT ? FOV : THREE.MathUtils.radToDeg(2 * Math.atan((Math.tan(half) * MIN_ASPECT) / aspect));
+    Object.assign(camera, { fov });
+    camera.updateProjectionMatrix();
+  }, [camera, aspect]);
+  return null;
+}
+
 // ── Turns the camera to face a print location ────────────────────────────────
 const VIEW_ANGLE = { front: 0, back: Math.PI, left: Math.PI / 2, right: -Math.PI / 2 };
 
@@ -658,6 +736,10 @@ export default function TShirtViewer({
   studio = false,
   showcase = 0,
   onShowcaseEnd,
+  slant = 0,
+  restDistance = null,
+  spinDistance = null,
+  onPrintLoaded,
   color,
   prints = [],
   view = null,
@@ -715,7 +797,7 @@ export default function TShirtViewer({
       shadows
       // Adjusted camera to better frame the shirt by default. If you want
       // a tighter/looser framing, tweak the Z and Y values here.
-      camera={{ position: CAMERA_POSITION, fov: 60 }}
+      camera={{ position: CAMERA_POSITION, fov: FOV }}
       style={{ background: "transparent", width: "100%", height: "100%" }}
       // preserveDrawingBuffer lets the customizer snapshot the canvas
       // (canvas.toDataURL) as an order preview for the admin.
@@ -769,6 +851,11 @@ export default function TShirtViewer({
           studio={studio}
           showcase={showcase}
           onShowcaseEnd={onShowcaseEnd}
+          view={view}
+          slant={slant}
+          restDistance={restDistance}
+          spinDistance={spinDistance}
+          onPrintLoaded={onPrintLoaded}
           color={color}
           prints={prints}
           autoRotate={isAutoRotating && autoRotate}
@@ -780,6 +867,7 @@ export default function TShirtViewer({
       </Suspense>
 
       <ViewFocus view={view} nonce={viewNonce} />
+      <FitFov />
 
       {/* OrbitControls – drag pauses auto-rotation and it resumes after 10 seconds */}
       <OrbitControls

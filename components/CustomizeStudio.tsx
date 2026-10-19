@@ -35,6 +35,8 @@ import {
   Clapperboard,
   Square,
   Download,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import type { Category, Design, PrintPlacement, PrintSpec } from "@/lib/types";
 import {
@@ -391,6 +393,14 @@ export default function CustomizeStudio({
   };
   // Phones show either the 3D shirt or the flat position guide above the tools.
   const [stage, setStage] = useState<"3d" | "guide">("3d");
+  /** The 3D view (or, on phones, the guide) fills the whole screen */
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [full]);
   const [newText, setNewText] = useState("YOUR TEXT");
   const [view, setView] = useState<{ name: PrintView; n: number }>({ name: "front", n: 0 });
 
@@ -824,6 +834,19 @@ export default function CustomizeStudio({
     </div>
   );
 
+  // Full screen on/off — top-right of the 3D view, and of the guide on phones
+  const fullButton = (dark: boolean) => (
+    <button
+      onClick={() => setFull((f) => !f)}
+      aria-pressed={full}
+      aria-label={full ? "Exit full screen" : "Full screen"}
+      title={full ? "Exit full screen (Esc)" : "Full screen"}
+      className={`absolute right-3 top-3 z-20 lg:right-4 lg:top-4 ${stageButton(dark, false)}`}
+    >
+      {full ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+    </button>
+  );
+
   const viewer = (dark: boolean) => (
     <div ref={viewerRef} className="absolute inset-0">
       {/* Dark stage: a soft pool of light behind the garment and a glow on the
@@ -902,7 +925,7 @@ export default function CustomizeStudio({
       </div>
       {/* Garment switcher: top on phones (the 3D/Guide toggle sits bottom-left), bottom on desktop */}
       {garments.length > 1 && (
-        <div className="absolute inset-x-3 top-3 lg:top-auto lg:bottom-4 flex justify-center pointer-events-none">
+        <div className="absolute inset-x-14 top-3 lg:inset-x-3 lg:top-auto lg:bottom-4 flex justify-center pointer-events-none">
           <div
             role="radiogroup"
             aria-label="Garment"
@@ -1177,9 +1200,9 @@ export default function CustomizeStudio({
       </header>
       {error && <p className="text-xs text-red-300 text-center py-1">{error}</p>}
 
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid content-start lg:content-stretch lg:grid-cols-[320px_1fr_minmax(380px,460px)]">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden grid content-start lg:content-stretch grid-cols-[minmax(0,1fr)] lg:grid-cols-[320px_minmax(0,1fr)_minmax(380px,460px)]">
         {/* Tools */}
-        <aside className="order-2 lg:order-1 bg-paper text-ink flex flex-col lg:min-h-0">
+        <aside className="order-2 lg:order-1 min-w-0 bg-paper text-ink flex flex-col lg:min-h-0">
           {/* Three clear steps */}
           <nav
             className="sticky top-[max(38vh,16rem)] lg:static z-10 shrink-0 grid grid-cols-3 gap-1 p-2 border-b border-line bg-white"
@@ -1497,23 +1520,34 @@ export default function CustomizeStudio({
         {/* 3D */}
         {/* Phones: the stage stays pinned at the top while the tools scroll */}
         <section
-          className={`order-1 lg:order-2 sticky top-0 z-20 lg:relative lg:z-auto h-[38vh] min-h-64 lg:h-auto lg:min-h-0 bg-[#141414] ${
-            stage === "3d" ? "" : "hidden lg:block"
-          }`}
+          className={`order-1 lg:order-2 bg-[#141414] ${
+            full
+              ? "fixed inset-0 z-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
+              : "sticky top-0 z-20 lg:relative lg:z-auto h-[38vh] min-h-64 lg:h-auto lg:min-h-0"
+          } ${stage === "3d" ? "" : "hidden lg:block"}`}
         >
           {viewer(true)}
           {stageSwitch}
+          {fullButton(true)}
         </section>
 
         {/* Position guide */}
         <aside
           className={`order-1 lg:order-3 sticky top-0 z-20 lg:static h-[38vh] min-h-64 lg:h-auto lg:min-h-0 bg-white text-ink overflow-hidden lg:overflow-y-auto p-3 lg:p-5 ${
-            stage === "guide" ? "" : "hidden lg:block"
+            stage !== "guide"
+              ? "hidden lg:block"
+              : full
+                ? "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:h-auto max-lg:flex max-lg:items-center max-lg:justify-center"
+                : ""
           }`}
         >
           <p className="hidden lg:block text-center text-xs font-bold uppercase tracking-[0.25em] text-muted mb-4">Position guide</p>
           {/* On phones the guide shrinks to fit the pinned stage */}
-          <div className="mx-auto lg:max-w-none max-w-[calc((38vh-1.5rem)*0.99)] lg:max-h-none">
+          <div
+            className={`mx-auto lg:max-w-none lg:max-h-none ${
+              full ? "w-full max-w-[calc((100dvh-1.5rem)*0.99)]" : "max-w-[calc((38vh-1.5rem)*0.99)]"
+            }`}
+          >
           <PositionGuide
             locations={locations}
             color={color}
@@ -1530,7 +1564,10 @@ export default function CustomizeStudio({
             }
           />
           </div>
-          <div className="lg:hidden">{stageSwitch}</div>
+          <div className="lg:hidden">
+            {stageSwitch}
+            {fullButton(false)}
+          </div>
           <p className="hidden lg:block text-[11px] text-muted text-center mt-3">
             {sel ? "Drag to move · drag a corner to resize · edit it in the Edit tab" : "Tap a design to edit it"}
           </p>

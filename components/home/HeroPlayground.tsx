@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowRight, MousePointer2, Images, Type } from "lucide-react";
@@ -15,6 +15,12 @@ const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   loading: () => <div className="w-full h-full flex items-center justify-center text-sm text-white/40">Loading 3D…</div>,
 });
 
+
+/** How often the hero carousel moves on to the next design */
+const CAROUSEL_MS = 7000;
+
+/** The hero shirt's two print slots (see HeroPlayground) */
+type Slot = "a" | "b";
 
 /** Renders a word/phrase to a transparent PNG for the live 3D preview. */
 function renderWord(text: string, color: string) {
@@ -42,28 +48,63 @@ function renderWord(text: string, color: string) {
 
 export default function HeroPlayground({ designs, pricing }: { designs: Design[]; pricing: Pricing }) {
   const [mode, setMode] = useState<"design" | "text">("design");
-  // `designId` is the picked thumbnail; `shownId` is what's printed on the
-  // shirt. Picking a design spins the shirt and swaps the print halfway round.
+  // `designId` is the picked thumbnail. The shirt holds two print slots: the
+  // one on show, and one where the next design is loaded and built onto the
+  // fabric out of sight. Only once it's ready does the shirt spin, and the
+  // halfway swap just flips which slot is visible — nothing heavy mid-turn.
+  // The hero shows the oversized tee, in the colours the admin offers for it.
+  const heroGarment = garmentFor(pricing, "oversized-tee");
+  const heroColors = useMemo(() => garmentColors(pricing, heroGarment.slug), [pricing, heroGarment.slug]);
+  const [color, setColor] = useState(heroColors[0].hex);
+  /** Shirt colour the carousel swaps in at the next halfway point */
+  const [nextColor, setNextColor] = useState<string | null>(null);
+
   const [designId, setDesignId] = useState(designs[0]?.id ?? "");
-  const [shownId, setShownId] = useState(designId);
+  const [slots, setSlots] = useState<{ front: Slot; ids: Record<Slot, string | null> }>({
+    front: "a",
+    ids: { a: designs[0]?.id ?? null, b: null },
+  });
+  const front = slots.front;
+  const back: Slot = front === "a" ? "b" : "a";
+  const frontId = slots.ids[front];
+  /** The turn in progress: which slot and design it reveals at halfway */
+  const [turning, setTurning] = useState<{ slot: Slot; id: string } | null>(null);
   const [spin, setSpin] = useState(0);
-  const pending = useRef(designId);
   const pickDesign = (id: string) => {
     if (id === designId) return;
     setDesignId(id);
-    pending.current = id;
-    setSpin((n) => n + 1);
+    setNextColor(null); // a visitor's pick keeps their colour
   };
-  const onSpinHalfway = useCallback(() => setShownId(pending.current), []);
+  const onSpinHalfway = useCallback(() => {
+    if (!turning) return;
+    // Show the new design; empty the other slot so the next one loads fresh.
+    const other: Slot = turning.slot === "a" ? "b" : "a";
+    setSlots({ front: turning.slot, ids: { [turning.slot]: turning.id, [other]: null } as Record<Slot, string | null> });
+    setTurning(null);
+    // A carousel change also swaps the shirt colour, out of sight like the print
+    if (nextColor) {
+      setColor(nextColor);
+      setNextColor(null);
+    }
+  }, [turning, nextColor]);
+
+  // Carousel: every 7s a random other design spins in, on a random other
+  // shirt colour. Picking a design restarts the wait (and keeps the visitor's
+  // colour); it pauses while the visitor is trying out text.
+  useEffect(() => {
+    if (mode !== "design" || designs.length < 2) return;
+    const t = setTimeout(() => {
+      const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)];
+      setDesignId(pick(designs.filter((d) => d.id !== designId)).id);
+      const others = heroColors.filter((c) => c.hex !== color);
+      if (others.length) setNextColor(pick(others).hex);
+    }, CAROUSEL_MS);
+    return () => clearTimeout(t);
+  }, [mode, designs, designId, heroColors, color]);
   const [text, setText] = useState("YOUR TEXT");
-  // The hero shows the oversized tee, in the colours the admin offers for it.
-  const heroGarment = garmentFor(pricing, "oversized-tee");
-  const heroColors = garmentColors(pricing, heroGarment.slug);
-  const [color, setColor] = useState(heroColors[0].hex);
   const [textArt, setTextArt] = useState<{ src: string; aspect: number } | null>(null);
 
   const design = designs.find((d) => d.id === designId);
-  const shown = designs.find((d) => d.id === shownId);
   const ink = readableOn(color);
 
   // Live text → texture, debounced so typing stays smooth.
@@ -73,7 +114,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     return () => clearTimeout(t);
   }, [mode, text, ink]);
 
-  const src = mode === "design" ? shown?.image : textArt?.src;
+
   // Print where store designs print by default (front, or back if front is hidden).
   const areaIds = visibleLocations(pricing).map((l) => l.id).join(",");
   const spot = useMemo(() => fixedPrintFor(areaIds.split(",")), [areaIds]);
@@ -90,23 +131,41 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     img.src = design.image;
   }, [design, aspects]);
 
-  const designAspect = shown ? aspects[shown.id] ?? 1 : 1;
+  // The hidden slot holds the newly picked design once its shape is known
+  // (during a turn: the design being revealed).
+  const wanted = mode === "design" && designId !== frontId && aspects[designId] ? designId : null;
+  const backId = turning ? turning.id : wanted ?? slots.ids[back];
+  // The hidden slot's print is built onto the fabric: turn to reveal it.
+  const onPrintLoaded = useCallback(
+    (slot: string) => {
+      if (slot !== back || !wanted || backId !== wanted || turning) return;
+      setTurning({ slot: back, id: wanted });
+      setSpin((n) => n + 1);
+    },
+    [back, wanted, backId, turning]
+  );
+
+  const shown = designs.find((d) => d.id === frontId);
+  const src = mode === "design" ? shown?.image : textArt?.src;
   const prints = useMemo(() => {
-    if (!src) return [];
     const loc = getLocation(spot.location)!;
-    let placement = spot.placement;
-    if (mode === "text" && textArt) {
+    if (mode === "text") {
+      if (!textArt) return [];
       // Wider words get a wider print (up to 13″), same 5.5″ top edge.
       const widthIn = Math.min(13, 9 * Math.max(1, textArt.aspect / 2.2));
-      placement =
+      const placement =
         loc.view === "front" || loc.view === "back"
           ? placementFromTop(loc, widthIn, textArt.aspect, FIXED_PRINT_SPEC.topIn)
           : spot.placement;
-    } else if (mode === "design") {
-      placement = fixedPrintFor([spot.location], designAspect).placement;
+      return [{ id: "text", location: spot.location, src: textArt.src, placement }];
     }
-    return [{ id: "hero", location: spot.location, src, placement }];
-  }, [src, mode, textArt, spot, designAspect]);
+    return (["a", "b"] as const).flatMap((slot) => {
+      const d = designs.find((x) => x.id === (slot === front ? frontId : backId));
+      if (!d) return [];
+      const placement = fixedPrintFor([spot.location], aspects[d.id] ?? 1).placement;
+      return [{ id: slot, location: spot.location, src: d.image, placement, hidden: slot !== front }];
+    });
+  }, [mode, textArt, spot, designs, front, frontId, backId, aspects]);
 
   const base = heroGarment.basePrice;
   const price = base + (src ? pricing.location[spot.location] : 0) + (mode === "design" ? design?.price ?? 0 : 0);
@@ -176,6 +235,10 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
               onReady={markHeroReady}
               spin={spin}
               onSpinHalfway={onSpinHalfway}
+              onPrintLoaded={onPrintLoaded}
+              slant={-18}
+              // Whole shirt at rest; zooms in during a design change, then back out
+              spinDistance={3.0}
             />
             <span className="absolute top-4 left-4 inline-flex items-center gap-1.5 rounded-full bg-white/10 backdrop-blur px-3 py-1.5 text-[11px] font-semibold pointer-events-none">
               <MousePointer2 className="w-3.5 h-3.5" /> Drag to spin
@@ -213,7 +276,10 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
                 {heroColors.map((c) => (
                   <button
                     key={c.hex}
-                    onClick={() => setColor(c.hex)}
+                    onClick={() => {
+                      setColor(c.hex);
+                      setNextColor(null); // the visitor's choice wins over a pending carousel colour
+                    }}
                     aria-label={c.label}
                     title={c.label}
                     className={`w-6 h-6 rounded-full ring-1 ring-white/30 transition-transform ${

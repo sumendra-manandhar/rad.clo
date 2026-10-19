@@ -11,6 +11,8 @@ export type ViewerPrint = {
   src: string;
   /** Position on the piece (see lib/print-locations) */
   placement?: PrintPlacement;
+  /** Built onto the garment but not shown (e.g. the next design, ready for an instant swap) */
+  hidden?: boolean;
   /** Artwork width ÷ height; when given, a design scaled past its area is cropped to it */
   aspect?: number;
 };
@@ -30,6 +32,14 @@ export type TShirtViewerProps = {
   showcase?: number;
   /** Called when the showcase has played through */
   onShowcaseEnd?: () => void;
+  /** Resting angle in degrees: the garment faces the viewer turned this much (spins end here too) */
+  slant?: number;
+  /** Resting camera distance (default view ≈ 3.3) */
+  restDistance?: number;
+  /** Called with a print's id once its artwork is loaded and built onto the garment */
+  onPrintLoaded?: (id: string) => void;
+  /** Camera distance mid-spin (default ≈ 3.3); closer zooms in during the turn, then back to rest */
+  spinDistance?: number;
   color: string;
   prints?: ViewerPrint[];
   view?: PrintView | null;
