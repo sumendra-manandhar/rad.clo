@@ -246,11 +246,13 @@ const OUTWARD = {
 //            the model — the hoodie's hood rises above its shoulders)
 // depth:     how deep a front/back print projects, as a share of the model's
 //            front-to-back thickness
+// frontLiftIn: inches to raise front prints by on this model (the hoodie's
+//            chest sits higher relative to its shoulder line than the tee's)
 // dyeable:   the model's colour map is near-black, so drop it (keeping its
 //            normal/roughness detail) and colour the fabric directly
 export const MODELS = {
   tee: { url: "/tshirt.glb", lengthIn: 31, depth: 0.35 },
-  hoodie: { url: "/hoodie.glb", lengthIn: 27, shoulderY: 1.64, depth: 0.5, dyeable: true },
+  hoodie: { url: "/hoodie.glb", lengthIn: 27, shoulderY: 1.64, depth: 0.5, frontLiftIn: 2, dyeable: true },
 };
 
 // ── The actual GLB model ──────────────────────────────────────────────────────
@@ -401,7 +403,8 @@ function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEn
         // offset, e.g. left chest, plus its spot inside the area) and from the
         // top of the shoulders.
         const dx = ((loc.cx ?? 0) + (pl.x - 0.5) * loc.inches.w) * inch;
-        const down = (loc.top + pl.y * loc.inches.h) * inch;
+        const lift = loc.view === "front" ? cfg.frontLiftIn ?? 0 : 0;
+        const down = (loc.top + pl.y * loc.inches.h - lift) * inch;
         const aim = new THREE.Vector3(mid.x, top - down, mid.z).addScaledVector(right, dx);
 
         // Fire a ray at the shirt from outside to find the fabric surface.
