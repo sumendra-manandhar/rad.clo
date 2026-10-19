@@ -67,6 +67,9 @@ export type CartItem = {
   previewUrl?: string;
 };
 
+/** A colour a garment comes in: "#rrggbb" and its name. */
+export type GarmentColor = { hex: string; label: string };
+
 /** Admin-editable catalogue settings. Missing keys fall back to the defaults in code. */
 export type Settings = {
   garmentPrices: Record<string, number>;
@@ -77,6 +80,8 @@ export type Settings = {
   hiddenLocations?: string[];
   /** Per-garment overrides for name, fabric line and photo */
   garmentInfo?: Record<string, { label?: string; fabric?: string; image?: string }>;
+  /** Colours each garment comes in (in display order); missing = all of COLORS */
+  garmentColors?: Record<string, GarmentColor[]>;
 };
 
 export const ORDER_STATUSES = [

@@ -2,15 +2,19 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Eye, EyeOff, ImagePlus, Loader2, RotateCcw } from "lucide-react";
-import { GARMENTS, formatPrice, type Pricing } from "@/lib/garments";
+import { Check, Eye, EyeOff, ImagePlus, Loader2, Plus, RotateCcw, X } from "lucide-react";
+import { COLORS, GARMENTS, formatPrice, type Pricing } from "@/lib/garments";
+import type { GarmentColor } from "@/lib/types";
 import { GUIDE, PANELS, PRINT_LOCATIONS, areaSize, type PrintLocation } from "@/lib/print-locations";
 import { PageHeader, inputCls } from "@/components/admin/ui";
 
-type GarmentRow = { label: string; fabric: string; image: string; price: string; visible: boolean };
+type GarmentRow = { label: string; fabric: string; image: string; price: string; visible: boolean; colors: GarmentColor[] };
+
+const sameColors = (a: GarmentColor[], b: GarmentColor[]) =>
+  a.length === b.length && a.every((c, i) => c.hex.toLowerCase() === b[i].hex.toLowerCase() && c.label === b[i].label);
 type AreaRow = { price: string; visible: boolean };
 
-/** Admin → Garments & print areas: visibility, prices, names, fabric lines and photos. */
+/** Admin → Garments & print areas: visibility, prices, names, fabric lines, photos and colours. */
 export default function PricingManager({ pricing }: { pricing: Pricing }) {
   const router = useRouter();
   const [garments, setGarments] = useState<Record<string, GarmentRow>>(() =>
@@ -21,6 +25,7 @@ export default function PricingManager({ pricing }: { pricing: Pricing }) {
           ...pricing.garmentInfo[g.slug],
           price: String(pricing.garment[g.slug]),
           visible: !pricing.hiddenGarments.includes(g.slug),
+          colors: pricing.colors[g.slug],
         },
       ])
     )
@@ -73,6 +78,7 @@ export default function PricingManager({ pricing }: { pricing: Pricing }) {
             },
           ])
         ),
+        garmentColors: Object.fromEntries(Object.entries(garments).map(([k, v]) => [k, v.colors])),
       }),
     });
     if (!res.ok) {
@@ -90,7 +96,7 @@ export default function PricingManager({ pricing }: { pricing: Pricing }) {
     <form onSubmit={save}>
       <PageHeader
         title="Garments & print areas"
-        sub="Hide anything you don't offer right now, and set prices. Price per shirt = garment + each print area used + any store design's price."
+        sub="Hide anything you don't offer right now, set prices, and choose the colours each garment comes in. Price per shirt = garment + each print area used + any store design's price."
       >
         <button
           disabled={state === "saving" || !dirty}
@@ -197,7 +203,11 @@ function GarmentCard({
     onChange({ image: json.url });
   };
 
-  const changed = row.label !== defaults.label || row.fabric !== defaults.fabric || row.image !== defaults.image;
+  const changed =
+    row.label !== defaults.label ||
+    row.fabric !== defaults.fabric ||
+    row.image !== defaults.image ||
+    !sameColors(row.colors, COLORS);
 
   return (
     <div className={`rounded-2xl border overflow-hidden transition-opacity ${row.visible ? "border-line" : "border-dashed border-line opacity-60"}`}>
@@ -242,18 +252,103 @@ function GarmentCard({
           aria-label="Fabric description"
         />
         <PriceInput value={row.price} onChange={(price) => onChange({ price })} />
+        <ColorsEditor colors={row.colors} onChange={(colors) => onChange({ colors })} />
         <div className="flex items-center justify-between text-[11px] text-muted">
           <span>{lastVisible ? "At least one garment must stay visible." : err || " "}</span>
           {changed && (
             <button
               type="button"
-              onClick={() => onChange({ label: defaults.label, fabric: defaults.fabric, image: defaults.image })}
+              onClick={() => onChange({ label: defaults.label, fabric: defaults.fabric, image: defaults.image, colors: COLORS })}
               className="inline-flex items-center gap-1 hover:text-ink"
             >
               <RotateCcw className="w-3 h-3" /> Defaults
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** The colours a garment comes in: remove any, add from the standard palette or a custom one. */
+function ColorsEditor({ colors, onChange }: { colors: GarmentColor[]; onChange: (c: GarmentColor[]) => void }) {
+  const [hex, setHex] = useState("#c0392b");
+  const [name, setName] = useState("");
+  const has = (h: string) => colors.some((c) => c.hex.toLowerCase() === h.toLowerCase());
+  const missing = COLORS.filter((c) => !has(c.hex));
+  const addCustom = () => {
+    if (!name.trim() || has(hex)) return;
+    onChange([...colors, { hex, label: name.trim() }]);
+    setName("");
+  };
+
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-widest text-muted mb-2">Colours · {colors.length}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {colors.map((c) => (
+          <span key={c.hex} className="inline-flex items-center gap-1.5 rounded-full border border-line pl-1 pr-1.5 py-1 text-xs">
+            <span className="w-4 h-4 rounded-full border border-black/15" style={{ background: c.hex }} />
+            {c.label}
+            <button
+              type="button"
+              onClick={() => onChange(colors.filter((x) => x.hex !== c.hex))}
+              disabled={colors.length === 1}
+              title={colors.length === 1 ? "Every garment needs at least one colour" : `Remove ${c.label}`}
+              aria-label={`Remove ${c.label}`}
+              className="text-muted hover:text-ink disabled:opacity-30"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+      {missing.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-2">
+          <span className="text-[11px] text-muted">Add:</span>
+          {missing.map((c) => (
+            <button
+              key={c.hex}
+              type="button"
+              onClick={() => onChange([...colors, c])}
+              title={`Add ${c.label}`}
+              aria-label={`Add ${c.label}`}
+              className="w-5 h-5 rounded-full border border-black/15 hover:scale-110 transition-transform"
+              style={{ background: c.hex }}
+            />
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 mt-2">
+        <input
+          type="color"
+          value={hex}
+          onChange={(e) => setHex(e.target.value)}
+          aria-label="Custom colour"
+          className="w-8 h-8 shrink-0 rounded-lg border border-line bg-white p-0.5 cursor-pointer"
+        />
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value.slice(0, 30))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addCustom();
+            }
+          }}
+          placeholder="Custom colour name"
+          aria-label="Custom colour name"
+          className={`${inputCls} text-xs py-1.5`}
+        />
+        <button
+          type="button"
+          onClick={addCustom}
+          disabled={!name.trim() || has(hex)}
+          title={has(hex) ? "Already added" : "Add this colour"}
+          className="shrink-0 w-8 h-8 rounded-lg bg-ink text-paper flex items-center justify-center disabled:opacity-30"
+        >
+          <Plus className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );

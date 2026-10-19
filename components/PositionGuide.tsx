@@ -11,6 +11,7 @@ import {
   type GuideBox,
   type PrintLocation,
 } from "@/lib/print-locations";
+import { readableOn } from "@/lib/text-art";
 
 /** `area` is the print-area id the design is locked inside (omitted for old orders). */
 export type GuideLayer = { id: string; src: string; box: GuideBox; aspect: number; area?: string };
@@ -32,7 +33,6 @@ type Props = {
   preview?: GuideLayer;
 };
 
-const DARK = ["#1f1f1f", "#1E334D", "#662735", "#476748", "#6F7573"];
 const SNAP = 0.06; // radians — snaps rotation to 0°, 90°, 180°, 270°
 const pct = (v: number, total: number) => `${(v / total) * 100}%`;
 
@@ -85,7 +85,7 @@ export default function PositionGuide({
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
-  const dark = DARK.includes(color);
+  const dark = readableOn(color) === "#ffffff"; // any colour, including admin-added ones
   const zone = dark ? "#ffd84a" : "#c99700";
   const panels = PANELS.filter((p) => locations.some((l) => l.panel === p.id));
   // Crop off the sleeve row when no sleeve areas are offered.

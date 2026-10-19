@@ -3,7 +3,7 @@ import { getPricing, store } from "@/lib/server/store";
 import { currentUser } from "@/lib/server/user";
 import { authEnabled } from "@/lib/supabase/config";
 import { newTrackCode } from "@/lib/track";
-import { SIZES, colorLabel, shippingFor, visibleGarments, visibleLocations } from "@/lib/garments";
+import { SIZES, colorLabel, garmentColors, shippingFor, visibleGarments, visibleLocations } from "@/lib/garments";
 import { PLACEMENT_VERSION, cleanPlacement, getLocation, upgradeV2Placement } from "@/lib/print-locations";
 import type { CartItem, PrintSpec } from "@/lib/types";
 
@@ -85,13 +85,15 @@ export async function POST(req: Request) {
       });
     }
 
-    const color = /^#[0-9a-f]{6}$/i.test(it.color) ? it.color : "#ffffff";
+    const colors = garmentColors(pricing, garment.slug);
+    const color = colors.find((c) => c.hex.toLowerCase() === String(it.color).toLowerCase())?.hex;
+    if (!color) return fail(`${garment.label} no longer comes in that colour. Please pick another one.`);
     items.push({
       id: str(it.id, 60),
       garment: garment.slug,
       garmentLabel: garment.label,
       color,
-      colorLabel: colorLabel(color),
+      colorLabel: colorLabel(color, colors),
       size: it.size,
       qty: Math.min(Math.max(1, Math.floor(Number(it.qty) || 1)), 500),
       unitPrice: pricing.garment[garment.slug] + prints.reduce((s, p) => s + (p.price ?? 0), 0),

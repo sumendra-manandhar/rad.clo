@@ -5,7 +5,8 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowRight, MousePointer2, Images, Type } from "lucide-react";
 import type { Design } from "@/lib/types";
-import { COLORS, formatPrice, garmentFor, visibleLocations, type Pricing } from "@/lib/garments";
+import { formatPrice, garmentColors, garmentFor, visibleLocations, type Pricing } from "@/lib/garments";
+import { readableOn } from "@/lib/text-art";
 import { FIXED_PRINT_SPEC, fixedPrintFor, getLocation, placementFromTop } from "@/lib/print-locations";
 import { markHeroReady } from "@/lib/intro";
 
@@ -14,7 +15,6 @@ const TShirtViewer = dynamic(() => import("@/components/TShirtViewer"), {
   loading: () => <div className="w-full h-full flex items-center justify-center text-sm text-white/40">Loading 3D…</div>,
 });
 
-const HERO_COLORS = COLORS.filter((c) => c.hex !== "#d9c7a7");
 
 /** Renders a word/phrase to a transparent PNG for the live 3D preview. */
 function renderWord(text: string, color: string) {
@@ -56,12 +56,15 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
   };
   const onSpinHalfway = useCallback(() => setShownId(pending.current), []);
   const [text, setText] = useState("YOUR TEXT");
-  const [color, setColor] = useState("#ffffff");
+  // The hero shows the oversized tee, in the colours the admin offers for it.
+  const heroGarment = garmentFor(pricing, "oversized-tee");
+  const heroColors = garmentColors(pricing, heroGarment.slug);
+  const [color, setColor] = useState(heroColors[0].hex);
   const [textArt, setTextArt] = useState<{ src: string; aspect: number } | null>(null);
 
   const design = designs.find((d) => d.id === designId);
   const shown = designs.find((d) => d.id === shownId);
-  const ink = color === "#ffffff" || color === "#d9c7a7" ? "#111111" : "#ffffff";
+  const ink = readableOn(color);
 
   // Live text → texture, debounced so typing stays smooth.
   useEffect(() => {
@@ -105,12 +108,12 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
     return [{ id: "hero", location: spot.location, src, placement }];
   }, [src, mode, textArt, spot, designAspect]);
 
-  const base = garmentFor(pricing, "oversized-tee").basePrice;
+  const base = heroGarment.basePrice;
   const price = base + (src ? pricing.location[spot.location] : 0) + (mode === "design" ? design?.price ?? 0 : 0);
   const studioHref =
     mode === "design" && design
-      ? `/customize?design=${design.slug}&color=${encodeURIComponent(color)}`
-      : `/customize?mode=text&text=${encodeURIComponent(text)}&color=${encodeURIComponent(color)}`;
+      ? `/customize?design=${design.slug}&garment=${heroGarment.slug}&color=${encodeURIComponent(color)}`
+      : `/customize?mode=text&text=${encodeURIComponent(text)}&garment=${heroGarment.slug}&color=${encodeURIComponent(color)}`;
 
   return (
     <section className="relative bg-ink text-white overflow-hidden">
@@ -207,7 +210,7 @@ export default function HeroPlayground({ designs, pricing }: { designs: Design[]
                 ))}
               </div>
               <div className="flex gap-1.5 ml-auto pr-1">
-                {HERO_COLORS.map((c) => (
+                {heroColors.map((c) => (
                   <button
                     key={c.hex}
                     onClick={() => setColor(c.hex)}

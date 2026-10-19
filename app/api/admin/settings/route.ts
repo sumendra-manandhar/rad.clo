@@ -9,7 +9,7 @@ const GARMENT_IDS = GARMENTS.map((g) => g.slug);
 const LOCATION_IDS = PRINT_LOCATIONS.map((l) => l.id);
 
 // Saves the catalogue settings: garment/print-area prices, which ones are
-// hidden, and garment names / fabric lines / photos.
+// hidden, and garment names / fabric lines / photos / colours.
 export async function PUT(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
@@ -51,12 +51,32 @@ export async function PUT(req: Request) {
     };
   }
 
+  // Each garment's colours: valid "#rrggbb" + name, no repeats, at least one.
+  const garmentColors: NonNullable<Settings["garmentColors"]> = {};
+  const colorsIn = (body.garmentColors ?? {}) as Record<string, unknown>;
+  for (const slug of GARMENT_IDS) {
+    const list = colorsIn[slug];
+    if (!Array.isArray(list)) continue;
+    const seen = new Set<string>();
+    const clean = list
+      .map((c) => c as { hex?: unknown; label?: unknown })
+      .filter((c) => typeof c.hex === "string" && /^#[0-9a-f]{6}$/i.test(c.hex) && typeof c.label === "string" && c.label.trim())
+      .map((c) => ({ hex: (c.hex as string).toLowerCase(), label: (c.label as string).trim().slice(0, 30) }))
+      .filter((c) => !seen.has(c.hex) && seen.add(c.hex))
+      .slice(0, 24);
+    if (!clean.length) {
+      return Response.json({ error: "Every garment needs at least one colour." }, { status: 400 });
+    }
+    garmentColors[slug] = clean;
+  }
+
   const settings = await store.updateSettings({
     garmentPrices: prices(body.garmentPrices, GARMENT_IDS),
     locationPrices: prices(body.locationPrices, LOCATION_IDS),
     hiddenGarments,
     hiddenLocations,
     garmentInfo,
+    garmentColors,
   });
   revalidatePath("/", "layout");
   return Response.json(settings);

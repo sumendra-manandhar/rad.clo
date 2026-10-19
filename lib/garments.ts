@@ -1,4 +1,4 @@
-import type { Settings } from "@/lib/types";
+import type { GarmentColor, Settings } from "@/lib/types";
 import { PRINT_LOCATIONS } from "@/lib/print-locations";
 
 export type Garment = {
@@ -52,7 +52,8 @@ export const GARMENTS: Garment[] = [
   },
 ];
 
-export const COLORS = [
+/** The standard palette; each garment offers all of these unless the admin picks its own. */
+export const COLORS: GarmentColor[] = [
   { hex: "#ffffff", label: "White" },
   { hex: "#1f1f1f", label: "Black" },
   { hex: "#6F7573", label: "Charcoal" },
@@ -79,8 +80,21 @@ export function getGarment(slug?: string | null) {
   return GARMENTS.find((g) => g.slug === slug) ?? GARMENTS[0];
 }
 
-export function colorLabel(hex: string) {
-  return COLORS.find((c) => c.hex.toLowerCase() === hex.toLowerCase())?.label ?? "Custom";
+/** Name of a colour, looked up in `list` (a garment's colours) and then the standard palette. */
+export function colorLabel(hex: string, list: GarmentColor[] = COLORS) {
+  const same = (c: GarmentColor) => c.hex.toLowerCase() === hex.toLowerCase();
+  return list.find(same)?.label ?? COLORS.find(same)?.label ?? "Custom";
+}
+
+/** Colours a garment comes in (admin's choice, or the standard palette). */
+export function garmentColors(p: Pricing, slug: string): GarmentColor[] {
+  return p.colors[slug]?.length ? p.colors[slug] : COLORS;
+}
+
+/** `hex` if the garment comes in it, otherwise the garment's first colour. */
+export function colorFor(p: Pricing, slug: string, hex?: string | null): string {
+  const list = garmentColors(p, slug);
+  return list.find((c) => c.hex.toLowerCase() === hex?.toLowerCase())?.hex ?? list[0].hex;
 }
 
 /** Nepali rupees, with lakh grouping (Rs. 1,00,000) as used in Nepal */
@@ -99,12 +113,17 @@ export type Pricing = {
   hiddenGarments: string[];
   hiddenLocations: string[];
   garmentInfo: Record<string, { label: string; fabric: string; image: string }>;
+  /** Colours per garment slug (see garmentColors) */
+  colors: Record<string, GarmentColor[]>;
 };
 
 export function resolvePricing(settings?: Partial<Settings> | null): Pricing {
   const garment: Record<string, number> = {};
   const garmentInfo: Pricing["garmentInfo"] = {};
+  const colors: Pricing["colors"] = {};
   for (const g of GARMENTS) {
+    const own = settings?.garmentColors?.[g.slug];
+    colors[g.slug] = own?.length ? own : COLORS;
     garment[g.slug] = settings?.garmentPrices?.[g.slug] ?? g.basePrice;
     const o = settings?.garmentInfo?.[g.slug];
     garmentInfo[g.slug] = { label: o?.label || g.label, fabric: o?.fabric || g.fabric, image: o?.image || g.image };
@@ -118,6 +137,7 @@ export function resolvePricing(settings?: Partial<Settings> | null): Pricing {
     hiddenGarments: known(settings?.hiddenGarments, GARMENTS.map((g) => g.slug)),
     hiddenLocations: known(settings?.hiddenLocations, PRINT_LOCATIONS.map((l) => l.id)),
     garmentInfo,
+    colors,
   };
 }
 

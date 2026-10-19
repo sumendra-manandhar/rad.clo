@@ -38,9 +38,10 @@ import {
 } from "lucide-react";
 import type { Category, Design, PrintPlacement, PrintSpec } from "@/lib/types";
 import {
-  COLORS,
   SIZES,
+  colorFor,
   colorLabel,
+  garmentColors,
   formatPrice,
   garmentFor,
   garmentModel,
@@ -211,10 +212,13 @@ export default function CustomizeStudio({
   const fixedPrint = fixedPrintFor(locations.map((l) => l.id));
 
   const [garment, setGarment] = useState(garmentFor(pricing, params.get("garment")).slug);
-  const [color, setColor] = useState(() => {
-    const c = params.get("color");
-    return c && COLORS.some((x) => x.hex === c) ? c : COLORS[0].hex;
-  });
+  const [color, setColor] = useState(() => colorFor(pricing, garment, params.get("color")));
+  // Colours this garment comes in; switching garment keeps the colour if it can.
+  const colors = garmentColors(pricing, garment);
+  const pickGarment = (slug: string) => {
+    setGarment(slug);
+    setColor((c) => colorFor(pricing, slug, c));
+  };
   const [size, setSize] = useState(SIZES.includes(params.get("size") || "") ? params.get("size")! : "M");
   const [qty, setQty] = useState(1);
 
@@ -668,8 +672,9 @@ export default function CustomizeStudio({
     const layersBack = ok.map((l) => (l.type === "text" ? { ...l, rendered: "" } : l));
     hist.current.auto.add(layersBack);
     setLayers(layersBack);
-    if (garments.some((x) => x.slug === d!.garment)) setGarment(d.garment);
-    if (COLORS.some((c) => c.hex === d!.color)) setColor(d.color);
+    const draftGarment = garments.some((x) => x.slug === d!.garment) ? d.garment : garment;
+    setGarment(draftGarment);
+    setColor(colorFor(pricing, draftGarment, d.color));
     if (SIZES.includes(d.size)) setSize(d.size);
     if (d.qty > 0) setQty(Math.min(500, d.qty));
     setPanel("designs");
@@ -747,7 +752,7 @@ export default function CustomizeStudio({
         garment: g.slug,
         garmentLabel: g.label,
         color,
-        colorLabel: colorLabel(color),
+        colorLabel: colorLabel(color, colors),
         size,
         qty,
         unitPrice,
@@ -912,7 +917,7 @@ export default function CustomizeStudio({
                   key={x.slug}
                   role="radio"
                   aria-checked={on}
-                  onClick={() => setGarment(x.slug)}
+                  onClick={() => pickGarment(x.slug)}
                   className={`shrink-0 whitespace-nowrap text-xs font-semibold px-3 py-1.5 rounded-full transition-colors ${
                     on
                       ? dark
@@ -940,7 +945,7 @@ export default function CustomizeStudio({
           {garments.map((x) => (
             <button
               key={x.slug}
-              onClick={() => setGarment(x.slug)}
+              onClick={() => pickGarment(x.slug)}
               className={`text-left rounded-xl border px-3 py-2.5 transition-colors ${
                 garment === x.slug ? "border-ink bg-ink text-paper" : "border-line bg-white hover:border-ink/40"
               }`}
@@ -953,9 +958,9 @@ export default function CustomizeStudio({
           ))}
         </div>
       </Section>
-      <Section title={`Colour · ${colorLabel(color)}`}>
+      <Section title={`Colour · ${colorLabel(color, colors)}`}>
         <div className="flex flex-wrap gap-2">
-          {COLORS.map((c) => (
+          {colors.map((c) => (
             <button
               key={c.hex}
               onClick={() => setColor(c.hex)}
@@ -1095,7 +1100,7 @@ export default function CustomizeStudio({
         <div className="lg:hidden fixed inset-x-3 bottom-[calc(5.75rem+env(safe-area-inset-bottom))] z-30 rounded-2xl border border-line bg-paper/95 backdrop-blur-xl shadow-lg px-3 py-2 flex items-center gap-2">
           <span className="min-w-0 flex-1">
             <span className="block text-[11px] text-muted truncate">
-              {g.label} · {colorLabel(color)} · {size}
+              {g.label} · {colorLabel(color, colors)} · {size}
             </span>
             <span className="block font-display font-bold leading-tight">{formatPrice(unitPrice * qty)}</span>
           </span>
@@ -1184,7 +1189,7 @@ export default function CustomizeStudio({
               [
                 ["add", "Add design", Plus, "Art or text"],
                 ["designs", "Edit", LayersIcon, layers.length ? `${layers.length} design${layers.length === 1 ? "" : "s"}` : "Nothing yet"],
-                ["shirt", "Shirt & size", Shirt, `${size} · ${colorLabel(color)}`],
+                ["shirt", "Shirt & size", Shirt, `${size} · ${colorLabel(color, colors)}`],
               ] as const
             ).map(([id, label, Icon, sub]) => (
               <button
@@ -1471,7 +1476,7 @@ export default function CustomizeStudio({
               <span className="w-8 h-8 rounded-full border border-black/15 shrink-0" style={{ backgroundColor: color }} />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold truncate">
-                  {g.label} · {colorLabel(color)} · {size}
+                  {g.label} · {colorLabel(color, colors)} · {size}
                   {qty > 1 && ` × ${qty}`}
                 </span>
                 <span className="block text-xs text-muted truncate">
@@ -1540,7 +1545,7 @@ export default function CustomizeStudio({
       <div className="lg:hidden shrink-0 flex items-center gap-3 border-t border-white/10 bg-[#141414] px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <span className="min-w-0 flex-1">
           <span className="block text-xs text-paper/60 truncate">
-            {g.label} · {colorLabel(color)} · {size}
+            {g.label} · {colorLabel(color, colors)} · {size}
             {qty > 1 && ` × ${qty}`}
           </span>
           <span className="block font-display font-bold">{formatPrice(unitPrice * qty)}</span>
