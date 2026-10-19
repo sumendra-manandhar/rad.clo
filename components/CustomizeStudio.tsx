@@ -813,9 +813,11 @@ export default function CustomizeStudio({
     </button>
   );
 
-  // Phones: small pill on the pinned stage to switch between 3D and the flat guide.
+  // Phones (and full screen on any device): pill to switch between 3D and the flat guide.
   const stageSwitch = (
-    <div className="lg:hidden absolute left-3 bottom-3 z-20 flex rounded-full bg-black/55 backdrop-blur p-1 text-[11px] font-semibold">
+    <div
+      className={`${full ? "" : "lg:hidden"} absolute left-3 bottom-3 lg:left-4 lg:bottom-4 z-20 flex rounded-full bg-black/55 backdrop-blur p-1 text-[11px] font-semibold`}
+    >
       {(
         [
           ["3d", "3D", Box],
@@ -832,6 +834,25 @@ export default function CustomizeStudio({
         </button>
       ))}
     </div>
+  );
+
+  // The interactive position guide (the guide panel, and the mini one in full-screen 3D)
+  const positionGuide = (
+    <PositionGuide
+      locations={locations}
+      color={color}
+      layers={guideLayers}
+      preview={guidePreview}
+      activeArea={selPiece?.id}
+      selected={selected}
+      onSelect={selectLayer}
+      onChange={(id, box) => updateLayer(id, { box })}
+      onAspect={(id, aspect) =>
+        setLayersSilently((prev) =>
+          prev.map((l) => (l.id === id && Math.abs(l.aspect - aspect) > 0.001 ? refit({ ...l, aspect } as Layer) : l))
+        )
+      }
+    />
   );
 
   // Full screen on/off — top-right of the 3D view, and of the guide on phones
@@ -1524,9 +1545,15 @@ export default function CustomizeStudio({
             full
               ? "fixed inset-0 z-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
               : "sticky top-0 z-20 lg:relative lg:z-auto h-[38vh] min-h-64 lg:h-auto lg:min-h-0"
-          } ${stage === "3d" ? "" : "hidden lg:block"}`}
+          } ${stage === "3d" ? "" : full ? "hidden" : "hidden lg:block"}`}
         >
           {viewer(true)}
+          {/* Full-screen 3D on desktop: a small live guide in the corner to move designs while watching the shirt */}
+          {full && (
+            <div className="hidden lg:block absolute left-4 top-4 z-20 w-72 rounded-2xl bg-white p-3 shadow-2xl">
+              {positionGuide}
+            </div>
+          )}
           {stageSwitch}
           {fullButton(true)}
         </section>
@@ -1534,48 +1561,42 @@ export default function CustomizeStudio({
         {/* Position guide */}
         <aside
           className={`order-1 lg:order-3 sticky top-0 z-20 lg:static h-[38vh] min-h-64 lg:h-auto lg:min-h-0 bg-white text-ink overflow-hidden lg:overflow-y-auto p-3 lg:p-5 ${
-            stage !== "guide"
-              ? "hidden lg:block"
-              : full
-                ? "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:h-auto max-lg:flex max-lg:items-center max-lg:justify-center"
-                : ""
+            full
+              ? stage === "guide"
+                ? "fixed! inset-0 z-50! h-auto! flex items-center justify-center"
+                : "hidden!"
+              : stage === "guide"
+                ? ""
+                : "hidden lg:block"
           }`}
         >
-          <p className="hidden lg:block text-center text-xs font-bold uppercase tracking-[0.25em] text-muted mb-4">Position guide</p>
+          {!full && (
+            <p className="hidden lg:block text-center text-xs font-bold uppercase tracking-[0.25em] text-muted mb-4">Position guide</p>
+          )}
           {/* On phones the guide shrinks to fit the pinned stage */}
           <div
-            className={`mx-auto lg:max-w-none lg:max-h-none ${
-              full ? "w-full max-w-[calc((100dvh-1.5rem)*0.99)]" : "max-w-[calc((38vh-1.5rem)*0.99)]"
+            className={`mx-auto ${
+              full ? "w-full max-w-[calc((100dvh-1.5rem)*0.99)]" : "max-w-[calc((38vh-1.5rem)*0.99)] lg:max-w-none lg:max-h-none"
             }`}
           >
-          <PositionGuide
-            locations={locations}
-            color={color}
-            layers={guideLayers}
-            preview={guidePreview}
-            activeArea={selPiece?.id}
-            selected={selected}
-            onSelect={selectLayer}
-            onChange={(id, box) => updateLayer(id, { box })}
-            onAspect={(id, aspect) =>
-              setLayersSilently((prev) =>
-                prev.map((l) => (l.id === id && Math.abs(l.aspect - aspect) > 0.001 ? refit({ ...l, aspect } as Layer) : l))
-              )
-            }
-          />
+          {positionGuide}
           </div>
-          <div className="lg:hidden">
+          <div className={full ? "" : "lg:hidden"}>
             {stageSwitch}
             {fullButton(false)}
           </div>
-          <p className="hidden lg:block text-[11px] text-muted text-center mt-3">
-            {sel ? "Drag to move · drag a corner to resize · edit it in the Edit tab" : "Tap a design to edit it"}
-          </p>
+          {!full && (
+            <>
+              <p className="hidden lg:block text-[11px] text-muted text-center mt-3">
+                {sel ? "Drag to move · drag a corner to resize · edit it in the Edit tab" : "Tap a design to edit it"}
+              </p>
 
-          <div className="hidden lg:block mt-5 pt-5 border-t border-line">
-            <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
-            <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
-          </div>
+              <div className="hidden lg:block mt-5 pt-5 border-t border-line">
+                <p className="text-xs font-bold uppercase tracking-widest text-muted mb-2.5">Print areas & sizes</p>
+                <PrintAreasLegend locations={locations} prices={pricing.location} used={areasUsed.map((l) => l.id)} />
+              </div>
+            </>
+          )}
         </aside>
       </div>
       {/* Phones: price and Add to cart always in reach */}
