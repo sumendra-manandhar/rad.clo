@@ -258,7 +258,7 @@ const SPIN_SECONDS = 1.1;
 const TURN = Math.PI * 2;
 const easeInOutCubic = (t) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
 
-function TShirtModel({ model = "tee", closeZoom = false, showcase = 0, color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
+function TShirtModel({ model = "tee", studio = false, showcase = 0, onShowcaseEnd, color, prints, autoRotate = true, onReady, spin = 0, onSpinHalfway, onSelectPrint }) {
   const cfg = MODELS[model] ?? MODELS.tee;
   const group = useRef();
 
@@ -463,8 +463,8 @@ function TShirtModel({ model = "tee", closeZoom = false, showcase = 0, color, pr
   return (
     <group ref={group}>
       {allLoaded && <ReadySignal onReady={onReady} />}
-      {closeZoom && showcase === 0 && <ChestZoom chestY={chestY} />}
-      {showcase > 0 && <ShowcaseCamera key={showcase} chestY={chestY} />}
+      {studio && showcase === 0 && <ChestZoom chestY={chestY} />}
+      {showcase > 0 && <ShowcaseCamera key={showcase} chestY={chestY} onEnd={onShowcaseEnd} />}
       <primitive
         object={cloned}
         scale={scale}
@@ -501,7 +501,7 @@ const MAX_EXTENT = 2.9;
 /** Inches below the shoulder line that close zoom aims at */
 const CHEST_IN = 11;
 
-// ── Showcase: a 10-second cinematic camera loop ─────────────────────────────
+// ── Showcase: a 10-second cinematic camera move ─────────────────────────────
 // Keyframes: [seconds, angle round the garment (° — 0 = front, 90 = its left
 // side), angle down from overhead (°), distance, aim height (0 = body
 // centre, 1 = chest)]. It pushes in on the front print, sweeps round a side,
@@ -523,7 +523,9 @@ const spline = (a, b, c, d, t) =>
 /** Camera at `time` seconds into the loop: { azimuth, polar } (radians), distance, aim height. */
 function showcaseAt(time) {
   const n = SHOT.length;
-  const t = ((time % SHOWCASE_SECONDS) + SHOWCASE_SECONDS) % SHOWCASE_SECONDS;
+  // The end of the loop is its start, one turn later
+  if (time >= SHOWCASE_SECONDS) time = 0;
+  const t = Math.max(0, time);
   let i = n - 1;
   while (SHOT[i][0] > t) i--;
   // Keyframe k, wrapping round the loop (angles keep turning, times keep going)
@@ -538,15 +540,21 @@ function showcaseAt(time) {
   return { azimuth: THREE.MathUtils.degToRad(v(1)), polar: THREE.MathUtils.degToRad(v(2)), distance: v(3), aim: v(4) };
 }
 
-// Drives the camera along the showcase loop while it plays (the customer's
-// orbit controls are paused); stopping hands the camera back where it is.
-function ShowcaseCamera({ chestY }) {
+// Drives the camera through the showcase once (the customer's orbit controls
+// are paused), then calls onEnd; it finishes on the front view it began with.
+function ShowcaseCamera({ chestY, onEnd }) {
   const camera = useThree((s) => s.camera);
   const controls = useThree((s) => s.controls);
   const time = useRef(0);
   const sph = useMemo(() => new THREE.Spherical(), []);
+  const ended = useRef(false);
   useFrame((_, dt) => {
-    time.current += Math.min(dt, 0.1);
+    if (ended.current) return;
+    time.current = Math.min(SHOWCASE_SECONDS, time.current + Math.min(dt, 0.1));
+    if (time.current >= SHOWCASE_SECONDS) {
+      ended.current = true;
+      onEnd?.();
+    }
     const { azimuth, polar, distance, aim } = showcaseAt(time.current);
     const target = new THREE.Vector3(0, TARGET_Y + (chestY - TARGET_Y) * aim, 0);
     sph.set(distance, polar, azimuth);
@@ -644,8 +652,9 @@ function ReadySignal({ onReady }) {
 //         (bump viewNonce to re-focus the same view after the user dragged)
 export default function TShirtViewer({
   model = "tee",
-  closeZoom = false,
+  studio = false,
   showcase = 0,
+  onShowcaseEnd,
   color,
   prints = [],
   view = null,
@@ -720,6 +729,15 @@ export default function TShirtViewer({
       />
       <directionalLight position={[-4, 2, -3]} intensity={0.5} />
       <pointLight position={[0, -4, 4]} intensity={0.3} />
+      {studio && (
+        <>
+          {/* Studio stage: a key spotlight from above-front, and rim lights
+              behind that outline the garment against the dark background */}
+          <spotLight position={[1.5, 5, 4]} angle={0.5} penumbra={0.9} intensity={35} decay={2} />
+          <directionalLight position={[-3.5, 2.5, -4]} intensity={1.6} />
+          <directionalLight position={[3.5, 2.5, -4]} intensity={1.6} />
+        </>
+      )}
 
       {/* Soft studio lighting, built in the browser. drei's presets download
           an HDR file from GitHub; if that's slow or blocked the whole canvas
@@ -745,8 +763,9 @@ export default function TShirtViewer({
       <Suspense fallback={<Loader />}>
         <TShirtModel
           model={model}
-          closeZoom={closeZoom}
+          studio={studio}
           showcase={showcase}
+          onShowcaseEnd={onShowcaseEnd}
           color={color}
           prints={prints}
           autoRotate={isAutoRotating && autoRotate}
@@ -767,7 +786,7 @@ export default function TShirtViewer({
         enabled={showcase === 0}
         enablePan={false}
         enableZoom={true}
-        minDistance={closeZoom ? NEAR_CLOSE : NEAR_DEFAULT}
+        minDistance={studio ? NEAR_CLOSE : NEAR_DEFAULT}
         maxDistance={4.0}
         autoRotate={isAutoRotating && autoRotate}
         onStart={handleControlsStart}

@@ -116,9 +116,9 @@ const textKey = (a: { text: string; style: TextStyle }) => textArtKey(a.text, a.
 /** Length of the 3D showcase loop (SHOWCASE_SECONDS in TShirtViewer) */
 const SHOWCASE_SECONDS = 10;
 
-/** Pill button on the 3D stage */
+/** Round icon button on the 3D stage */
 const stageButton = (dark: boolean, on: boolean) =>
-  `flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-full border transition-colors disabled:opacity-60 ${
+  `w-9 h-9 flex items-center justify-center rounded-full border transition-colors disabled:opacity-60 ${
     on
       ? dark
         ? "bg-paper text-ink border-paper"
@@ -821,10 +821,23 @@ export default function CustomizeStudio({
 
   const viewer = (dark: boolean) => (
     <div ref={viewerRef} className="absolute inset-0">
+      {/* Dark stage: a soft pool of light behind the garment and a glow on the
+          floor under it, so even a black tee stands out */}
+      {dark && (
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "radial-gradient(ellipse 48% 42% at 50% 46%, rgba(255,255,255,0.16), rgba(255,255,255,0.05) 55%, transparent 75%), radial-gradient(ellipse 30% 6% at 50% 82%, rgba(255,255,255,0.10), transparent 100%)",
+          }}
+        />
+      )}
       <TShirtViewer
         model={garmentModel(g.slug)}
-        closeZoom
+        studio
         showcase={showcase}
+        onShowcaseEnd={() => setShowcase(0)}
         color={color}
         prints={shirtPrints}
         view={view.name}
@@ -860,25 +873,26 @@ export default function CustomizeStudio({
           </button>
         ))}
       </div>
-      {/* Showcase: a cinematic camera loop round the garment, and a clip of it to save */}
+      {/* Showcase: one cinematic camera move round the garment, and a clip of it to save */}
       <div className="absolute right-3 bottom-3 lg:right-4 lg:bottom-4 flex gap-1.5">
         <button
           onClick={() => setShowcase((n) => (n ? 0 : 1))}
           disabled={recording}
           aria-pressed={showcase > 0}
-          title={showcase ? "Stop the showcase" : `Play a ${SHOWCASE_SECONDS}-second cinematic loop round the garment`}
+          aria-label={showcase ? "Stop showcase" : "Showcase"}
+          title={showcase ? "Stop" : `Showcase — a ${SHOWCASE_SECONDS}-second cinematic look round the garment`}
           className={stageButton(dark, showcase > 0)}
         >
-          {showcase ? <Square className="w-4 h-4" /> : <Clapperboard className="w-4 h-4" />}
-          {recording ? "Recording…" : showcase ? "Stop" : "Showcase"}
+          {showcase ? <Square className="w-3.5 h-3.5" /> : <Clapperboard className="w-4 h-4" />}
         </button>
         <button
           onClick={saveShowcase}
           disabled={recording}
-          title={`Record one ${SHOWCASE_SECONDS}-second loop and download it`}
+          aria-label={recording ? "Recording video" : "Save video"}
+          title={recording ? "Recording…" : `Save the ${SHOWCASE_SECONDS}-second showcase as a video`}
           className={stageButton(dark, false)}
         >
-          <Download className="w-4 h-4" /> Save video
+          {recording ? <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" /> : <Download className="w-4 h-4" />}
         </button>
       </div>
       {/* Garment switcher: top on phones (the 3D/Guide toggle sits bottom-left), bottom on desktop */}

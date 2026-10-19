@@ -18,13 +18,18 @@ export type ViewerPrint = {
 export type TShirtViewerProps = {
   /** 3D model to show: "tee" (default) or "hoodie" */
   model?: "tee" | "hoodie";
-  /** Let the customer zoom in close; the view glides up to the chest as they do */
-  closeZoom?: boolean;
   /**
-   * Plays the 10-second cinematic camera loop round the garment while > 0;
-   * a new number restarts it from the start. 0 hands the camera back.
+   * Customize page: stage lighting (spotlight and rim lights), and close zoom
+   * — the view glides up to the chest as the customer zooms in
+   */
+  studio?: boolean;
+  /**
+   * Plays the 10-second cinematic camera move round the garment once when set
+   * to a new number above 0; 0 stops it and hands the camera back.
    */
   showcase?: number;
+  /** Called when the showcase has played through */
+  onShowcaseEnd?: () => void;
   color: string;
   prints?: ViewerPrint[];
   view?: PrintView | null;
