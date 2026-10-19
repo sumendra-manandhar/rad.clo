@@ -4,7 +4,7 @@ import { currentUser } from "@/lib/server/user";
 import { authEnabled } from "@/lib/supabase/config";
 import { newTrackCode } from "@/lib/track";
 import { SIZES, colorLabel, shippingFor, visibleGarments, visibleLocations } from "@/lib/garments";
-import { cleanPlacement, getLocation } from "@/lib/print-locations";
+import { PLACEMENT_VERSION, cleanPlacement, getLocation, upgradeV2Placement } from "@/lib/print-locations";
 import type { CartItem, PrintSpec } from "@/lib/types";
 
 // Places an order. Prices are recalculated here from the catalogue and the
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     for (const p of Array.isArray(it.prints) ? it.prints.slice(0, 12) : []) {
       const loc = visibleLocations(pricing).find((l) => l.id === p.location) ?? null;
       if (!loc) return fail(`Printing on the ${getLocation(p.location)?.label ?? "selected area"} is no longer available.`);
-      if (p.v !== 2) {
+      if (p.v !== 2 && p.v !== PLACEMENT_VERSION) {
         return fail("We've updated our print areas. Please remove the older item from your cart and add it again.");
       }
       let designPrice = 0;
@@ -73,14 +73,15 @@ export async function POST(req: Request) {
       const aspect = Number(p.aspect);
       prints.push({
         location: loc.id,
-        placement: cleanPlacement(p.placement),
+        // Carts saved before full front/back grew to 13″ × 20″ keep their real print size
+        placement: p.v === 2 ? upgradeV2Placement(loc, cleanPlacement(p.placement)) : cleanPlacement(p.placement),
         aspect: Number.isFinite(aspect) && aspect > 0.05 && aspect < 20 ? aspect : 1,
         designType: p.designType,
         designId: p.designType === "gallery" ? p.designId : undefined,
         designName,
         artworkUrl,
         price: areaFee + designPrice,
-        v: 2,
+        v: PLACEMENT_VERSION,
       });
     }
 

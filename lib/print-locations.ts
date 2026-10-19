@@ -120,7 +120,7 @@ const AREAS: AreaSpec[] = [
     hint: "Main graphic · top edge about 2–3″ below the collar",
     panel: "front",
     defaultPrice: 199,
-    inches: { w: 11, h: 17 },
+    inches: { w: 13, h: 20 },
     top: 5.5,
     cx: 0,
   },
@@ -151,7 +151,7 @@ const AREAS: AreaSpec[] = [
     hint: "Big back print · names & numbers",
     panel: "back",
     defaultPrice: 199,
-    inches: { w: 11, h: 17 },
+    inches: { w: 13, h: 20 },
     top: 5.5,
     cx: 0,
   },
@@ -184,8 +184,29 @@ export const PRINT_LOCATIONS: PrintLocation[] = AREAS.map((a) => {
 
 export const DEFAULT_LOCATION = "front";
 
-/** Store designs print 11″ wide, centred, with the top edge 5.5″ below the shoulder line. */
-export const FIXED_PRINT_SPEC = { widthIn: 11, topIn: 5.5 };
+/** Current placement version (see PrintSpec.v). */
+export const PLACEMENT_VERSION = 3;
+
+/** Full front/back were 11″ × 17″ for version-2 placements. */
+const V2_INCHES: Record<string, { w: number; h: number }> = { front: { w: 11, h: 17 }, back: { w: 11, h: 17 } };
+
+function v2Frame(loc: PrintLocation): PrintLocation {
+  const inches = V2_INCHES[loc.id];
+  return inches ? { ...loc, inches, rect: rectOn(panel(loc.panel), inches.w, inches.h, loc.top, loc.cx) } : loc;
+}
+
+/** Re-expresses a version-2 placement against today's area, keeping the print's real size and spot. */
+export function upgradeV2Placement(loc: PrintLocation, p: PrintPlacement): PrintPlacement {
+  const old = v2Frame(loc);
+  if (old === loc) return p;
+  return toPlacement(loc, toGuideBox(old, p));
+}
+
+/**
+ * Store designs fill the full front/back: 13″ wide (narrower if a tall design
+ * would pass the 20″ height), centred, top edge 5.5″ below the shoulder line.
+ */
+export const FIXED_PRINT_SPEC = { widthIn: 13, topIn: 5.5 };
 
 /** A small area (chest, upper back, sleeves) rather than a full front/back */
 export const isSmallArea = (loc: PrintLocation) => loc.inches.w < 6;
@@ -250,7 +271,8 @@ export const AREA_FOR_VIEW: Record<PrintView, string> = {
  */
 export function placementFrame(print: Pick<PrintSpec, "location" | "v">): PrintLocation | undefined {
   const loc = getLocation(print.location);
-  if (!loc || print.v === 2) return loc;
+  if (!loc || print.v === PLACEMENT_VERSION) return loc;
+  if (print.v === 2) return v2Frame(loc);
   const legacy = PANELS.find((p) => p.id === print.location);
   return legacy ? { ...loc, inches: legacy.inches, top: legacy.top, cx: legacy.cx, rect: legacy.rect } : loc;
 }
@@ -300,15 +322,65 @@ export function fitInside(b: GuideBox, aspect: number, r: Rect): GuideBox {
   };
 }
 
+/**
+ * How much bigger than "fits the area" a design may be scaled. Whatever
+ * runs past the area's edges is cropped off.
+ */
+export const MAX_ZOOM = 3;
+
+/** Largest width a design can be scaled to on an area. */
+export const maxZoomWidth = (aspect: number, r: Rect) => MAX_ZOOM * Math.min(r.w, r.h * (aspect > 0 ? aspect : 1));
+
+/** Width at which an unrotated design covers the whole area (edges cropped). */
+export const coverWidth = (aspect: number, r: Rect) => Math.max(r.w, r.h * (aspect > 0 ? aspect : 1));
+
+/** Half the width and height of a design's rotated bounding box. */
+function halfExtents(b: GuideBox, aspect: number) {
+  const a = aspect > 0 ? aspect : 1;
+  const c = Math.abs(Math.cos(b.rotation));
+  const s = Math.abs(Math.sin(b.rotation));
+  return { hx: (b.w * (c + s / a)) / 2, hy: (b.w * (s + c / a)) / 2 };
+}
+
+/**
+ * Keeps a design on its print area while letting it grow past the edges
+ * (that part is cropped off). Along each axis, a design that fits stays
+ * completely inside; one bigger than the area must cover it edge to edge,
+ * so a cropped side never leaves a gap.
+ */
+export function constrainToArea(b: GuideBox, aspect: number, r: Rect): GuideBox {
+  const fit = fitInside({ ...b, w: Infinity }, aspect, r).w;
+  const w = Math.min(maxZoomWidth(aspect, r), Math.max(Math.min(8, fit), b.w));
+  const { hx, hy } = halfExtents({ ...b, w }, aspect);
+  const clamp = (v: number, a: number, z: number) => Math.min(Math.max(a, z), Math.max(Math.min(a, z), v));
+  return {
+    ...b,
+    w,
+    cx: clamp(b.cx, r.x + hx, r.x + r.w - hx),
+    cy: clamp(b.cy, r.y + hy, r.y + r.h - hy),
+  };
+}
+
+/** True when part of the design runs past the area and will be cropped. */
+export function overflowsArea(b: GuideBox, aspect: number, r: Rect) {
+  const { hx, hy } = halfExtents(b, aspect);
+  const e = 0.5; // canvas units of slack for rounding
+  return b.cx - hx < r.x - e || b.cx + hx > r.x + r.w + e || b.cy - hy < r.y - e || b.cy + hy > r.y + r.h + e;
+}
+
+export const placementOverflows = (loc: PrintLocation, p: PrintPlacement, aspect: number) =>
+  overflowsArea(toGuideBox(loc, p), aspect, loc.rect);
+
 /** Sanitises a placement from the browser (used by the order API). */
 export function cleanPlacement(p: Partial<PrintPlacement> | undefined): PrintPlacement {
   const num = (v: unknown, d: number, min: number, max: number) =>
     typeof v === "number" && Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : d;
   const r = num(p?.rotation, 0, -100, 100);
   return {
-    x: num(p?.x, 0.5, 0, 1),
-    y: num(p?.y, 0.5, 0, 1),
-    w: num(p?.w, 0.5, 0.01, 2),
+    // Scaled-up designs can be centred off the area (only the part inside prints).
+    x: num(p?.x, 0.5, -4, 5),
+    y: num(p?.y, 0.5, -4, 5),
+    w: num(p?.w, 0.5, 0.01, MAX_ZOOM * 1.5),
     rotation: Math.atan2(Math.sin(r), Math.cos(r)),
   };
 }
@@ -330,10 +402,11 @@ export function describePlacement(loc: PrintLocation, p: PrintPlacement, aspect:
     across,
     `top edge ${topEdge.toFixed(1)}″ below ${side ? "the shoulder line" : "the shoulder seam"}`,
     deg ? `rotated ${deg}°` : null,
+    placementOverflows(loc, p, aspect) ? `cropped to the ${areaSize(loc)} area — print only the part inside it` : null,
   ]
     .filter(Boolean)
     .join(" · ");
 }
 
-/** "11″ × 17″" */
+/** "13″ × 20″" */
 export const areaSize = (loc: PrintLocation) => `${loc.inches.w}″ × ${loc.inches.h}″`;

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Download, Phone, Mail, MapPin, Search } from "lucide-react";
 import { ORDER_STATUSES, type Order, type OrderStatus } from "@/lib/types";
 import { formatPrice } from "@/lib/garments";
-import { areaSize, describePlacement, getLocation, placementFrame, toGuideBox } from "@/lib/print-locations";
+import { PLACEMENT_VERSION, areaSize, describePlacement, getLocation, placementFrame, toGuideBox } from "@/lib/print-locations";
 import PositionGuide from "@/components/PositionGuide";
 import { PageHeader, StatusBadge, inputCls } from "@/components/admin/ui";
 
@@ -131,7 +131,16 @@ export default function OrdersManager({
                                     // New orders: relative to the print area; older ones: the whole piece.
                                     const loc = placementFrame(p);
                                     return loc && p.placement
-                                      ? [{ id: String(i), src: p.artworkUrl, aspect: p.aspect || 1, box: toGuideBox(loc, p.placement) }]
+                                      ? [
+                                          {
+                                            id: String(i),
+                                            src: p.artworkUrl,
+                                            aspect: p.aspect || 1,
+                                            box: toGuideBox(loc, p.placement),
+                                            // Shows scaled-up designs cropped to their area, as printed
+                                            area: p.v === PLACEMENT_VERSION ? p.location : undefined,
+                                          },
+                                        ]
                                       : [];
                                   })}
                                 />
@@ -153,7 +162,7 @@ export default function OrdersManager({
                                       <div className="min-w-0 flex-1">
                                         <p className="text-xs font-semibold">
                                           {loc?.label ?? p.location}
-                                          {loc && p.v === 2 && <span className="font-normal text-muted"> · {areaSize(loc)} area</span>}
+                                          {frame && p.v && <span className="font-normal text-muted"> · {areaSize(frame)} area</span>}
                                         </p>
                                         <p className="text-xs truncate">{p.designName}</p>
                                         {frame && p.placement && (

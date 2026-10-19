@@ -45,10 +45,12 @@ export type PrintSpec = {
   /** Design price, plus the area fee for the first print on each area (set by the server) */
   price?: number;
   /**
-   * 2 = placement is relative to the print area's box (Oct 2026 on). Older
-   * orders have none: their placement is relative to the whole garment piece.
+   * 3 = placement is relative to the print area's box, full front/back
+   * 13″ × 20″ (Oct 2026 on). 2 = the same, but full front/back were
+   * 11″ × 17″. Older orders have none: their placement is relative to the
+   * whole garment piece.
    */
-  v?: 2;
+  v?: 2 | 3;
 };
 
 export type CartItem = {

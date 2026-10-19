@@ -11,6 +11,8 @@ export type ViewerPrint = {
   src: string;
   /** Position on the piece (see lib/print-locations) */
   placement?: PrintPlacement;
+  /** Artwork width ÷ height; when given, a design scaled past its area is cropped to it */
+  aspect?: number;
 };
 
 export type TShirtViewerProps = {

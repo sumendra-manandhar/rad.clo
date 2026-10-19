@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { Fragment, useEffect, useRef } from "react";
 import {
   GUIDE,
   PANELS,
   PRINT_LOCATIONS,
-  fitInside,
+  constrainToArea,
   isSmallArea,
+  overflowsArea,
   type GuideBox,
   type PrintLocation,
 } from "@/lib/print-locations";
@@ -27,11 +28,26 @@ type Props = {
   onAspect?: (id: string, aspect: number) => void;
   /** Order view: no handles, no dragging */
   readOnly?: boolean;
+  /** A design shown but not yet added (e.g. text being typed): not selectable */
+  preview?: GuideLayer;
 };
 
 const DARK = ["#1f1f1f", "#1E334D", "#662735", "#476748", "#6F7573"];
 const SNAP = 0.06; // radians — snaps rotation to 0°, 90°, 180°, 270°
 const pct = (v: number, total: number) => `${(v / total) * 100}%`;
+
+type Frame = { x: number; y: number; w: number; h: number };
+
+/** Positions a box (guide units) inside a frame that is itself placed on the guide. */
+function boxStyle(b: GuideBox, aspect: number, f: Frame): React.CSSProperties {
+  return {
+    left: pct(b.cx - f.x, f.w),
+    top: pct(b.cy - f.y, f.h),
+    width: pct(b.w, f.w),
+    aspectRatio: String(aspect || 1),
+    transform: `translate(-50%, -50%) rotate(${b.rotation}rad)`,
+  };
+}
 
 type Drag = {
   id: string;
@@ -49,8 +65,9 @@ type Drag = {
 
 /**
  * The flat garment pattern (front, back, sleeves) with the print areas drawn
- * as numbered dashed boxes. Each design stays inside its area's box while it
- * is dragged, resized or rotated. Selected designs get corner handles to
+ * as numbered dashed boxes. Each design stays on its area while it is
+ * dragged, resized or rotated; scaled past the area, the overflow is cropped
+ * off (shown faded while the design is selected). Selected designs get corner handles to
  * resize and a top handle to rotate. Keyboard: arrows nudge (Shift = bigger),
  * +/- resize, [ ] rotate; Delete is handled by the parent.
  */
@@ -64,6 +81,7 @@ export default function PositionGuide({
   onAspect,
   readOnly,
   activeArea,
+  preview,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
@@ -74,10 +92,13 @@ export default function PositionGuide({
   const H = panels.some((p) => p.view === "left" || p.view === "right") ? GUIDE.h : 626;
   const used = new Set(layers.map((l) => l.area));
 
-  // Keeps a design inside its print area (or on the canvas for old orders).
+  const areaOf = (layer: GuideLayer) => (layer.area ? PRINT_LOCATIONS.find((l) => l.id === layer.area) : undefined);
+  const whole: Frame = { x: 0, y: 0, w: GUIDE.w, h: H };
+
+  // Keeps a design on its print area (or on the canvas for old orders).
   const constrain = (layer: GuideLayer, b: GuideBox) => {
-    const area = layer.area ? PRINT_LOCATIONS.find((l) => l.id === layer.area) : undefined;
-    return area ? fitInside(b, layer.aspect, area.rect) : clampBox(b);
+    const area = areaOf(layer);
+    return area ? constrainToArea(b, layer.aspect, area.rect) : clampBox(b);
   };
 
   const begin = (layer: GuideLayer, mode: Drag["mode"]) => (e: React.PointerEvent) => {
@@ -108,6 +129,8 @@ export default function PositionGuide({
   const move = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d || !onChange) return;
+    // Button already released (the pointer-up went elsewhere): stop dragging.
+    if (e.pointerType === "mouse" && e.buttons === 0) return end();
     const s = d.start;
     if (d.mode === "move") {
       onChange(d.id, constrain(d.layer, { ...s, cx: s.cx + (e.clientX - d.px) * d.unit, cy: s.cy + (e.clientY - d.py) * d.unit }));
@@ -121,7 +144,20 @@ export default function PositionGuide({
     }
   };
 
-  const end = () => (drag.current = null);
+  const end = () => {
+    drag.current = null;
+  };
+
+  // Safety net: any release anywhere ends a drag.
+  useEffect(() => {
+    const stop = () => (drag.current = null);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+    return () => {
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+  }, []);
 
   const onKey = (layer: GuideLayer) => (e: React.KeyboardEvent) => {
     if (readOnly || !onChange) return;
@@ -211,68 +247,108 @@ export default function PositionGuide({
         const isSel = !readOnly && selected === layer.id;
         // A design whose area the admin has since hidden won't print.
         const onGarment = !layer.area || locations.some((l) => l.id === layer.area);
-        return (
-          <div
-            key={layer.id}
-            role={readOnly ? undefined : "button"}
-            tabIndex={readOnly ? undefined : 0}
-            aria-label={readOnly ? undefined : "Design — drag to move"}
-            onKeyDown={onKey(layer)}
-            onPointerDown={begin(layer, "move")}
-            onPointerMove={move}
-            onPointerUp={end}
-            onPointerCancel={end}
-            className={`absolute outline-none ${readOnly ? "" : "cursor-move"} ${isSel ? "z-10" : ""}`}
-            style={{
-              left: pct(layer.box.cx, GUIDE.w),
-              top: pct(layer.box.cy, H),
-              width: pct(layer.box.w, GUIDE.w),
-              aspectRatio: String(layer.aspect || 1),
-              transform: `translate(-50%, -50%) rotate(${layer.box.rotation}rad)`,
-              opacity: onGarment ? 1 : 0.45,
+        const area = areaOf(layer);
+        const crop = area && overflowsArea(layer.box, layer.aspect, area.rect) ? area.rect : null;
+        const art = (faded?: boolean) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={layer.src}
+            alt=""
+            draggable={false}
+            className={`w-full h-full object-contain pointer-events-none ${faded ? "opacity-30" : ""}`}
+            onLoad={(e) => {
+              const img = e.currentTarget;
+              if (img.naturalWidth && img.naturalHeight) onAspect?.(layer.id, img.naturalWidth / img.naturalHeight);
             }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={layer.src}
-              alt=""
-              draggable={false}
-              className="w-full h-full object-contain pointer-events-none"
-              onLoad={(e) => {
-                const img = e.currentTarget;
-                if (img.naturalWidth && img.naturalHeight) onAspect?.(layer.id, img.naturalWidth / img.naturalHeight);
-              }}
+          />
+        );
+        const corners = isSel && (
+          <>
+            <span className="absolute inset-0 border-2 border-sky-500 pointer-events-none" />
+            {["-left-1.5 -top-1.5", "-right-1.5 -top-1.5", "-left-1.5 -bottom-1.5", "-right-1.5 -bottom-1.5"].map((pos) => (
+              <span
+                key={pos}
+                onPointerDown={begin(layer, "scale")}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={end}
+                className={`absolute ${pos} w-3 h-3 bg-white border-2 border-sky-500 cursor-nwse-resize`}
+              />
+            ))}
+            <span className="absolute left-1/2 -top-7 h-7 w-0.5 -translate-x-1/2 bg-sky-500 pointer-events-none" />
+            <span
+              onPointerDown={begin(layer, "rotate")}
+              onPointerMove={move}
+              onPointerUp={end}
+              onPointerCancel={end}
+              title="Drag to rotate"
+              className="absolute left-1/2 -top-9 w-4 h-4 -translate-x-1/2 bg-white border-2 border-sky-500 cursor-grab"
             />
-            {!onGarment && <span className="absolute inset-0 border-2 border-dashed border-red-500 pointer-events-none" />}
+          </>
+        );
+        // The same elements are kept whether or not the design is cropped or
+        // selected: swapping them mid-drag would drop the pointer capture and
+        // leave the drag stuck. The design is drawn inside a frame — its print
+        // area when it's cropped — so only the part that prints shows. When
+        // selected, an unclipped box on top shows the cropped-off part faded
+        // and holds the resize/rotate handles.
+        return (
+          <Fragment key={layer.id}>
+            <div
+              className={`absolute overflow-hidden pointer-events-none ${isSel ? "z-10" : ""}`}
+              style={frameStyle(crop ?? whole, H)}
+            >
+              <div
+                role={readOnly ? undefined : "button"}
+                tabIndex={readOnly ? undefined : 0}
+                aria-label={readOnly ? undefined : "Design — drag to move"}
+                onKeyDown={onKey(layer)}
+                onPointerDown={begin(layer, "move")}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={end}
+                className={`absolute pointer-events-auto outline-none ${readOnly ? "" : "cursor-move"}`}
+                style={{ ...boxStyle(layer.box, layer.aspect, crop ?? whole), opacity: onGarment ? 1 : 0.45 }}
+              >
+                {art()}
+                {!onGarment && <span className="absolute inset-0 border-2 border-dashed border-red-500 pointer-events-none" />}
+              </div>
+            </div>
             {isSel && (
-              <>
-                <span className="absolute inset-0 border-2 border-sky-500 pointer-events-none" />
-                {["-left-1.5 -top-1.5", "-right-1.5 -top-1.5", "-left-1.5 -bottom-1.5", "-right-1.5 -bottom-1.5"].map((pos) => (
-                  <span
-                    key={pos}
-                    onPointerDown={begin(layer, "scale")}
-                    onPointerMove={move}
-                    onPointerUp={end}
-                    onPointerCancel={end}
-                    className={`absolute ${pos} w-3 h-3 bg-white border-2 border-sky-500 cursor-nwse-resize`}
-                  />
-                ))}
-                <span className="absolute left-1/2 -top-7 h-7 w-0.5 -translate-x-1/2 bg-sky-500 pointer-events-none" />
-                <span
-                  onPointerDown={begin(layer, "rotate")}
-                  onPointerMove={move}
-                  onPointerUp={end}
-                  onPointerCancel={end}
-                  title="Drag to rotate"
-                  className="absolute left-1/2 -top-9 w-4 h-4 -translate-x-1/2 bg-white border-2 border-sky-500 cursor-grab"
-                />
-              </>
+              <div
+                onPointerDown={begin(layer, "move")}
+                onPointerMove={move}
+                onPointerUp={end}
+                onPointerCancel={end}
+                className="absolute z-10 cursor-move"
+                style={boxStyle(layer.box, layer.aspect, whole)}
+              >
+                {crop && art(true)}
+                {corners}
+              </div>
             )}
-          </div>
+          </Fragment>
         );
       })}
+
+      {preview &&
+        (() => {
+          const f = areaOf(preview)?.rect ?? whole;
+          return (
+            <div className="absolute overflow-hidden pointer-events-none" style={frameStyle(f, H)}>
+              <div className="absolute" style={boxStyle(preview.box, preview.aspect, f)}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview.src} alt="" className="w-full h-full object-contain" />
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
+}
+
+function frameStyle(f: Frame, H: number): React.CSSProperties {
+  return { left: pct(f.x, GUIDE.w), top: pct(f.y, H), width: pct(f.w, GUIDE.w), height: pct(f.h, H) };
 }
 
 function clampBox(b: GuideBox): GuideBox {

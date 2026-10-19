@@ -24,7 +24,7 @@ const FAQS = [
   ["Is there a minimum order?", "No — order a single piece. Orders of 20+ get bulk pricing; tell us the quantity on the contact page."],
   ["How long does it take?", "Most orders are printed within 3–5 working days, plus 2–5 days for delivery depending on your location."],
   ["How do I keep the print looking new?", "Wash inside out in cold water, skip the dryer if you can, and don't iron directly on the print."],
-  ["Where can I print?", "Six print areas: full front (11″ × 17″), left chest (3.5″ × 3.5″), full back (11″ × 17″), upper back (4″ × 3″) and each sleeve (2.5″ × 2.5″). Each area you use is priced once, and your design always stays inside its area so it prints exactly as you see it in 3D."],
+  ["Where can I print?", "Six print areas: full front (13″ × 20″), left chest (3.5″ × 3.5″), full back (13″ × 20″), upper back (4″ × 3″) and each sleeve (2.5″ × 2.5″). Each area you use is priced once, and your design always stays inside its area so it prints exactly as you see it in 3D."],
   ["How do I pay?", "After you place your order, we confirm the design and details with you and share payment options before printing."],
 ];
 

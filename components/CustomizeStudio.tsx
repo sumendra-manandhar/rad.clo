@@ -47,9 +47,14 @@ import {
 import {
   AREA_FOR_VIEW,
   FIXED_PRINT_SPEC,
+  PLACEMENT_VERSION,
   PRINT_LOCATIONS,
   areaSize,
+  constrainToArea,
+  coverWidth,
   fitInside,
+  maxZoomWidth,
+  overflowsArea,
   fixedPrintFor,
   getLocation,
   newPlacement,
@@ -96,13 +101,20 @@ type Art =
 /** A design on the garment: artwork, the print area it's in and its box on the position guide. */
 type Layer = Art & { id: string; area: string; box: GuideBox; aspect: number };
 
-/** Keeps a layer inside its print area (after its size, shape or rotation changes). */
+/** Keeps a layer on its print area (after its size, shape or rotation changes). */
 function refit<T extends Layer>(l: T): T {
   const area = getLocation(l.area);
-  return area ? { ...l, box: fitInside(l.box, l.aspect, area.rect) } : l;
+  return area ? { ...l, box: constrainToArea(l.box, l.aspect, area.rect) } : l;
 }
 
 const textKey = (a: { text: string; style: TextStyle }) => textArtKey(a.text, a.style);
+
+/** New text starts in a colour that reads well on the shirt. */
+const newTextStyle = (shirt: string): TextStyle => ({
+  ...DEFAULT_TEXT_STYLE,
+  color: readableOn(shirt),
+  outlineColor: readableOn(readableOn(shirt)),
+});
 
 /** What the customer can see/change about the layers (ignores re-rendered images). */
 const stepKey = (ls: Layer[]) =>
@@ -374,7 +386,7 @@ export default function CustomizeStudio({
   const viewerPrints = useMemo(
     () =>
       throttled
-        .map((p) => ({ id: p.layer.id, location: p.loc.id, src: srcOf(p.layer), placement: p.placement }))
+        .map((p) => ({ id: p.layer.id, location: p.loc.id, src: srcOf(p.layer), placement: p.placement, aspect: p.layer.aspect }))
         .filter((p) => p.src && shapeKnown),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [throttled, shapeKnown]
@@ -416,6 +428,51 @@ export default function CustomizeStudio({
     setLayers((prev) => [...prev, layer]);
     setSelected(layer.id);
   };
+
+  // Add → Text: show the text being typed on the shirt before it's added.
+  const typing = panel === "add" && tab === "text" ? newText.trim() : "";
+  const [typed, setTyped] = useState<{ src: string; aspect: number } | null>(null);
+  useEffect(() => {
+    if (!typing) return;
+    let gone = false;
+    const t = setTimeout(async () => {
+      const out = await renderTextArt(typing, newTextStyle(color));
+      if (!gone) setTyped(out);
+    }, 150);
+    return () => {
+      gone = true;
+      clearTimeout(t);
+    };
+  }, [typing, color]);
+  const shirtPrints = useMemo(
+    () =>
+      typing && typed
+        ? [
+            ...viewerPrints,
+            {
+              id: "typing-preview",
+              location: addTarget.id,
+              src: typed.src,
+              placement: newPlacement(addTarget, typed.aspect),
+              aspect: typed.aspect,
+            },
+          ]
+        : viewerPrints,
+    [viewerPrints, typing, typed, addTarget]
+  );
+  const guidePreview = useMemo(
+    () =>
+      typing && typed
+        ? {
+            id: "typing-preview",
+            src: typed.src,
+            aspect: typed.aspect,
+            area: addTarget.id,
+            box: toGuideBox(addTarget, newPlacement(addTarget, typed.aspect)),
+          }
+        : undefined,
+    [typing, typed, addTarget]
+  );
 
   const removeLayer = (id: string) => {
     setLayers((prev) => prev.filter((l) => l.id !== id));
@@ -478,8 +535,7 @@ export default function CustomizeStudio({
   }, [textSig]);
 
   const addText = async (initial = "YOUR TEXT") => {
-    // Start with a colour that reads well on this shirt.
-    const style: TextStyle = { ...DEFAULT_TEXT_STYLE, color: readableOn(color), outlineColor: readableOn(readableOn(color)) };
+    const style = newTextStyle(color);
     const out = await renderTextArt(initial, style);
     if (!out) return;
     addLayer({ type: "text", src: out.src, text: initial, style, rendered: textArtKey(initial, style) }, out.aspect);
@@ -625,7 +681,7 @@ export default function CustomizeStudio({
           designName: nameOf(layer),
           artworkUrl,
           price: areaFee + designPriceOf(layer),
-          v: 2,
+          v: PLACEMENT_VERSION,
         });
       }
       let previewUrl: string | undefined;
@@ -717,12 +773,11 @@ export default function CustomizeStudio({
     <div ref={viewerRef} className="absolute inset-0">
       <TShirtViewer
         color={color}
-        prints={viewerPrints}
+        prints={shirtPrints}
         view={view.name}
         viewNonce={view.n}
         autoRotate={false}
         onReady={waitingForPrint ? undefined : markPreviewReady}
-        onSelectPrint={editorOpen ? selectLayer : undefined}
       />
       <PreviewCover dark={dark} hidden={previewReady} />
       {/* Phones spin the shirt by dragging (and it turns to the chosen print area), so these are desktop-only */}
@@ -863,7 +918,7 @@ export default function CustomizeStudio({
                 <p>
                   <span className="font-semibold">Print:</span>{" "}
                   {fixedSpot.location === "front" || fixedSpot.location === "back"
-                    ? `${getLocation(fixedSpot.location)?.label.toLowerCase()} (${areaSize(getLocation(fixedSpot.location)!)} area), ${(fixedSpot.placement.w * (getLocation(fixedSpot.location)?.inches.w ?? 11)).toFixed(1)}″ wide, centred, top edge ${FIXED_PRINT_SPEC.topIn}″ below the shoulder line.`
+                    ? `${getLocation(fixedSpot.location)?.label.toLowerCase()} (${areaSize(getLocation(fixedSpot.location)!)} area), ${(fixedSpot.placement.w * (getLocation(fixedSpot.location)?.inches.w ?? 13)).toFixed(1)}″ wide, centred, top edge ${FIXED_PRINT_SPEC.topIn}″ below the shoulder line.`
                     : `${getLocation(fixedSpot.location)?.label.toLowerCase()}, centred.`}
                 </p>
               ) : printed.length ? (
@@ -1188,7 +1243,9 @@ export default function CustomizeStudio({
                     >
                       <Plus className="w-4 h-4" /> Add text
                     </button>
-                    <p className="text-[11px] text-muted">Change the font and colour after adding, in My designs.</p>
+                    <p className="text-[11px] text-muted">
+                      Previewing on the {addTarget.label.toLowerCase()}. Change the font and colour after adding, in My designs.
+                    </p>
                   </div>
                 )}
               </>
@@ -1333,6 +1390,7 @@ export default function CustomizeStudio({
             locations={locations}
             color={color}
             layers={guideLayers}
+            preview={guidePreview}
             activeArea={selPiece?.id}
             selected={selected}
             onSelect={selectLayer}
@@ -1414,8 +1472,11 @@ function SelectedDesign({
   onRemove: () => void;
 }) {
   const b = layer.box;
-  const maxW = area ? fitInside({ ...b, w: Infinity }, layer.aspect, area.rect).w : b.w;
-  const minW = area ? Math.min(maxW, area.rect.w / 6) : b.w;
+  // "Fit" shows the whole design; past that it's scaled up and cropped to the area.
+  const fitW = area ? fitInside({ ...b, w: Infinity }, layer.aspect, area.rect).w : b.w;
+  const maxW = area ? maxZoomWidth(layer.aspect, area.rect) : b.w;
+  const minW = area ? Math.min(fitW, area.rect.w / 6) : b.w;
+  const cropped = !!area && overflowsArea(b, layer.aspect, area.rect);
   const perInch = area ? area.rect.w / area.inches.w : 1;
   const wIn = b.w / perInch;
   const hIn = wIn / (layer.aspect || 1);
@@ -1426,10 +1487,14 @@ function SelectedDesign({
     const r = b.rotation + (d * Math.PI) / 180;
     onBox({ ...b, rotation: Math.abs(r) < 1e-6 ? 0 : Math.atan2(Math.sin(r), Math.cos(r)) });
   };
-  const sizes: [string, number][] = [
-    ["Small", 0.5],
-    ["Medium", 0.75],
-    ["Fill", 1],
+  const sizes: [string, number, boolean][] = [
+    ["Small", fitW * 0.5, false],
+    ["Medium", fitW * 0.75, false],
+    ["Fit", fitW, false],
+    // Covers the whole area, centred — edges cropped
+    ...(area && coverWidth(layer.aspect, area.rect) - fitW > 1
+      ? [["Fill", Math.min(maxW, coverWidth(layer.aspect, area.rect)), true] as [string, number, boolean]]
+      : []),
   ];
   const actions = [
     ["Centre", Crosshair, () => area && onBox({ ...b, cx: area.rect.x + area.rect.w / 2 }), false, false],
@@ -1515,16 +1580,22 @@ function SelectedDesign({
           <div className="flex items-baseline justify-between mb-2">
             <p className="text-xs font-bold uppercase tracking-widest text-muted">Size</p>
             <p className="text-xs text-muted">
-              {wIn.toFixed(1)}″ wide · max {(maxW / perInch).toFixed(1)}″
+              {wIn.toFixed(1)}″ wide{cropped ? " · edges cropped" : ` · fits up to ${(fitW / perInch).toFixed(1)}″`}
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-1.5 mb-3">
-            {sizes.map(([label, f]) => {
-              const on = Math.abs(b.w - maxW * f) < 1;
+          <div className={`grid gap-1.5 mb-3 ${sizes.length === 4 ? "grid-cols-4" : "grid-cols-3"}`}>
+            {sizes.map(([label, w, centre]) => {
+              const on = Math.abs(b.w - w) < 1;
               return (
                 <button
                   key={label}
-                  onClick={() => onBox({ ...b, w: Math.max(minW, maxW * f) })}
+                  onClick={() =>
+                    onBox({
+                      ...b,
+                      w: Math.max(minW, w),
+                      ...(centre && area && { cx: area.rect.x + area.rect.w / 2, cy: area.rect.y + area.rect.h / 2, rotation: 0 }),
+                    })
+                  }
                   className={`rounded-xl border py-2 text-xs font-semibold transition-colors ${
                     on ? "bg-ink text-paper border-ink" : "border-line hover:border-ink/40"
                   }`}

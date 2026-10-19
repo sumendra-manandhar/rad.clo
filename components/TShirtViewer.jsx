@@ -11,7 +11,7 @@ import {
   ContactShadows,
 } from "@react-three/drei";
 import * as THREE from "three";
-import { getLocation } from "@/lib/print-locations";
+import { getLocation, placementOverflows } from "@/lib/print-locations";
 
 // Small safety net: if projecting a decal onto a particular shirt panel
 // fails for any reason, swallow it and just skip that panel instead of
@@ -114,17 +114,46 @@ function useDecalTexture(src) {
   return texture;
 }
 
+// A design scaled past its print area is printed cropped to the area. Draw
+// the visible part onto an area-sized canvas (after the background
+// knock-out, so white JPG backgrounds still disappear) and project that.
+function useCroppedTexture(texture, crop) {
+  const cropped = useMemo(() => {
+    const img = texture?.image;
+    if (!img?.width || !img?.height || !crop) return null;
+    const { pl, inches } = crop;
+    const w = pl.w * inches.w; // design width in inches
+    const h = w / (img.width / img.height);
+    // Keep about the source resolution, within a sensible canvas size.
+    const k = Math.min(Math.max(img.width / w, 40), 1024 / Math.max(inches.w, inches.h)); // px per inch
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(inches.w * k));
+    canvas.height = Math.max(1, Math.round(inches.h * k));
+    const ctx = canvas.getContext("2d");
+    ctx.translate(pl.x * inches.w * k, pl.y * inches.h * k);
+    ctx.rotate(pl.rotation || 0);
+    ctx.drawImage(img, (-w * k) / 2, (-h * k) / 2, w * k, h * k);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    return tex;
+  }, [texture, crop]);
+  useEffect(() => () => cropped?.dispose(), [cropped]);
+  return crop ? cropped : texture;
+}
+
 // ── One print, projected onto every shirt panel it overlaps ───────────────────
 // Each Decal is rendered *inside* its panel mesh (via createPortal) because
 // drei's Decal builds geometry in the mesh's own local space. This model's
 // panels are stored Z-up and stood upright by a -90° parent rotation, so a
 // decal attached anywhere else misses that rotation and lies flat under the
 // shirt.
-function PrintDecal({ src, placement, onLoaded, onSelect, order = 0 }) {
-  const texture = useDecalTexture(src);
+function PrintDecal({ src, placement, crop, onLoaded, onSelect, order = 0 }) {
+  const loaded = useDecalTexture(src);
   useEffect(() => {
-    if (texture) onLoaded(src);
-  }, [texture, src, onLoaded]);
+    if (loaded) onLoaded(src);
+  }, [loaded, src, onLoaded]);
+  const texture = useCroppedTexture(loaded, crop);
 
   // Artwork width comes from the placement; height follows its aspect ratio.
   const fit = useMemo(() => {
@@ -339,7 +368,10 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
       .map((print) => {
         const loc = getLocation(print.location);
         if (!loc || !print.src) return null;
-        const pl = print.placement ?? { x: 0.5, y: 0.3, w: 0.5, rotation: 0 };
+        const given = print.placement ?? { x: 0.5, y: 0.3, w: 0.5, rotation: 0 };
+        // Cropped designs are drawn onto the whole area, which is projected as one.
+        const crop = print.aspect && placementOverflows(loc, given, print.aspect) ? { pl: given, inches: loc.inches } : null;
+        const pl = crop ? { x: 0.5, y: 0.5, w: 1, rotation: 0 } : given;
         const normal = OUTWARD[loc.view];
         const sleeve = loc.view === "left" || loc.view === "right";
         // Viewer's right when looking at this side of the shirt.
@@ -394,7 +426,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
             };
           });
 
-        return { key: print.id ?? print.location, id: print.id, src: print.src, placement: { width, depth, panels: panelPlacements } };
+        return { key: print.id ?? print.location, id: print.id, src: print.src, crop, placement: { width, depth, panels: panelPlacements } };
       })
       .filter(Boolean);
   }, [prints, panels, rootBox, cloned]);
@@ -416,6 +448,7 @@ function TShirtModel({ color, prints, autoRotate = true, onReady, spin = 0, onSp
           key={`${p.key}:${p.src.slice(-40)}`}
           src={p.src}
           placement={p.placement}
+          crop={p.crop}
           onLoaded={markLoaded}
           order={i}
           onSelect={onSelectPrint && p.id ? () => onSelectPrint(p.id) : undefined}
